@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "T1 Operations",
+    "slug": "t1-operations-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "t1operations",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.t1gaming.operations"
+    },
+    "android": {
+      "package": "com.t1gaming.operations"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
