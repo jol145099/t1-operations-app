@@ -6,11 +6,12 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
 
 type Player = { id: string; display_name: string }
-type AdjustmentKind = '租號' | '罰錢' | '扣押金' | '預支' | '借錢' | '加雞腿' | '打手之間扣款' | '其他'
+type AdjustmentKind = '租號' | '賠付' | '罰錢' | '扣押金' | '預支' | '借錢' | '加雞腿' | '打手之間扣款' | '其他'
 
-const kinds: AdjustmentKind[] = ['租號', '罰錢', '扣押金', '預支', '借錢', '加雞腿', '打手之間扣款', '其他']
+const kinds: AdjustmentKind[] = ['租號', '賠付', '罰錢', '扣押金', '預支', '借錢', '加雞腿', '打手之間扣款', '其他']
 const typeMap: Record<AdjustmentKind, string> = {
   租號: 'rental',
+  賠付: 'compensation',
   罰錢: 'penalty',
   扣押金: 'deposit',
   預支: 'advance',
@@ -21,6 +22,7 @@ const typeMap: Record<AdjustmentKind, string> = {
 }
 const defaultSign: Record<AdjustmentKind, '加款' | '扣款'> = {
   租號: '扣款',
+  賠付: '扣款',
   罰錢: '扣款',
   扣押金: '扣款',
   預支: '扣款',
@@ -139,7 +141,7 @@ export default function AdjustmentsScreen() {
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
       <Screen>
         <H1>打手帳務調整</H1>
-        <Muted>租號、罰錢、扣押金、預支、借錢、加雞腿、打手之間扣款等，都會直接進入 ledger，兩週結算時一起計算。</Muted>
+        <Muted>租號、賠付、罰錢、扣押金、預支、借錢、加雞腿、打手之間扣款等，都會直接進入 ledger，兩週結算時一起計算。</Muted>
 
         <Card>
           <H2>1. 選擇打手</H2>
