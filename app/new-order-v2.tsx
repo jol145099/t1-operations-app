@@ -41,6 +41,7 @@ type SearchItem = { id: string; label: string; searchText?: string }
 const RANKS: Rank[] = ['B', 'A', 'S', 'SR']
 const SECRECY: Secrecy[] = ['機密', '絕密']
 const ENTERTAINMENT_TYPES = Object.keys(ENTERTAINMENT_OPTIONS) as EntertainmentType[]
+const DISPATCH_PRESETS = ['0', '2.5', '3', '5'] as const
 
 function todayLocal() {
   const now = new Date()
@@ -144,6 +145,9 @@ export default function NewOrderV2Screen() {
   const currentAmount = Math.max(0, Number(amount || 0))
   const dispatchFee = ceilMoney(currentAmount * nominalRate)
   const entertainmentOptions = ENTERTAINMENT_OPTIONS[entertainmentType] as readonly { label: string; price: number }[]
+  const dispatchPresetValue = DISPATCH_PRESETS.includes(dispatchPct as (typeof DISPATCH_PRESETS)[number])
+    ? `${dispatchPct}%`
+    : '自訂'
 
   useEffect(() => {
     setAmountManual(false)
@@ -461,6 +465,7 @@ export default function NewOrderV2Screen() {
       responsible: responsible || null,
       system_amount: systemAmount,
       manual_amount: amountManual,
+      nominal_dispatch_rate: nominalRate,
       nominal_dispatch_fee: dispatchFee,
       topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null
     })
@@ -511,7 +516,7 @@ export default function NewOrderV2Screen() {
     }
 
     setBusy(false)
-    Alert.alert('報單完成', `${order.order_no}\n總金額 $${ceilMoney(currentAmount)}\n派單抽成 $${dispatchFee}`)
+    Alert.alert('報單完成', `${order.order_no}\n總金額 $${ceilMoney(currentAmount)}\n派單抽成 ${dispatchPct || 0}% = $${dispatchFee}`)
     setCustomerId('')
     setCustomerName('')
     setCustomerQuery('')
@@ -552,44 +557,23 @@ export default function NewOrderV2Screen() {
         <Card>
           <H2>1. 單種</H2>
 
-          <Dropdown
-            label="服務分類"
-            value={serviceGroup}
-            open={groupOpen}
-            onToggle={() => setGroupOpen(!groupOpen)}
-          >
+          <Dropdown label="服務分類" value={serviceGroup} open={groupOpen} onToggle={() => setGroupOpen(!groupOpen)}>
             <ScrollView style={styles.menuScroll} nestedScrollEnabled>
               {SERVICE_GROUPS.map((group) => (
-                <Choice
-                  key={group.label}
-                  text={group.label}
-                  onPress={() => {
-                    setServiceGroup(group.label)
-                    setGroupOpen(false)
-                    const first = group.items[0]
-                    if (first) setCategory(first)
-                  }}
-                />
+                <Choice key={group.label} text={group.label} onPress={() => {
+                  setServiceGroup(group.label)
+                  setGroupOpen(false)
+                  const first = group.items[0]
+                  if (first) setCategory(first)
+                }} />
               ))}
             </ScrollView>
           </Dropdown>
 
-          <Dropdown
-            label="單種"
-            value={category}
-            open={categoryOpen}
-            onToggle={() => setCategoryOpen(!categoryOpen)}
-          >
+          <Dropdown label="單種" value={category} open={categoryOpen} onToggle={() => setCategoryOpen(!categoryOpen)}>
             <ScrollView style={styles.menuScroll} nestedScrollEnabled>
               {groupItems.map((item) => (
-                <Choice
-                  key={item}
-                  text={item}
-                  onPress={() => {
-                    setCategory(item)
-                    setCategoryOpen(false)
-                  }}
-                />
+                <Choice key={item} text={item} onPress={() => { setCategory(item); setCategoryOpen(false) }} />
               ))}
             </ScrollView>
           </Dropdown>
@@ -623,10 +607,7 @@ export default function NewOrderV2Screen() {
               setAmountManual(false)
             }}
             entertainmentOption={entertainmentOption}
-            setEntertainmentOption={(value: string) => {
-              setEntertainmentOption(value)
-              setAmountManual(false)
-            }}
+            setEntertainmentOption={(value: string) => { setEntertainmentOption(value); setAmountManual(false) }}
             entertainmentOptions={entertainmentOptions}
             runTier={runTier}
             setRunTier={setRunTier}
@@ -668,10 +649,7 @@ export default function NewOrderV2Screen() {
               setCustomerOpen(false)
             }}
             addLabel="＋ 名單沒有？新增老闆"
-            onAdd={() => {
-              setCustomerOpen(false)
-              setShowAddCustomer(true)
-            }}
+            onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }}
           />
 
           {showAddCustomer ? (
@@ -690,10 +668,7 @@ export default function NewOrderV2Screen() {
               setAmountManual(true)
               if (category === '娛樂單') {
                 const result = entertainmentPricing(Number(value || 0))
-                setSlots((current) => current.map((slot, i) => ({
-                  ...slot,
-                  pay: String(result.pays[i] ?? 0)
-                })))
+                setSlots((current) => current.map((slot, i) => ({ ...slot, pay: String(result.pays[i] ?? 0) })))
               }
             }}
             keyboardType="decimal-pad"
@@ -702,10 +677,7 @@ export default function NewOrderV2Screen() {
           <View style={styles.summaryRow}>
             <Muted>系統價：${systemAmount}</Muted>
             {amountManual ? (
-              <Pressable onPress={() => {
-                setAmountManual(false)
-                setAmount(String(systemAmount))
-              }}>
+              <Pressable onPress={() => { setAmountManual(false); setAmount(String(systemAmount)) }}>
                 <Text style={styles.link}>套用系統價</Text>
               </Pressable>
             ) : null}
@@ -716,16 +688,9 @@ export default function NewOrderV2Screen() {
           <Card>
             <H2>3. 打手與實拿</H2>
 
-            {category === '小時單' ? (
-              <Muted>打手等級直接固定跟隨上面設定，不需要在下面再選一次。</Muted>
-            ) : null}
-
+            {category === '小時單' ? <Muted>打手等級直接固定跟隨上面設定，不需要在下面再選一次。</Muted> : null}
             {category === '女陪單' ? (
-              <Muted>
-                {femaleMode === '女+技術陪'
-                  ? '女陪欄只顯示女陪名單；技術陪欄只顯示技術打手名單。'
-                  : '純女陪只會顯示女陪名單。'}
-              </Muted>
+              <Muted>{femaleMode === '女+技術陪' ? '女陪欄只顯示女陪名單；技術陪欄只顯示技術打手名單。' : '純女陪只會顯示女陪名單。'}</Muted>
             ) : null}
 
             {slots.map((slot, index) => {
@@ -761,11 +726,7 @@ export default function NewOrderV2Screen() {
 
                   {showAddPlayer === index ? (
                     <View style={styles.inline}>
-                      <Field
-                        value={newPlayer}
-                        onChangeText={setNewPlayer}
-                        placeholder={newPlayerType === 'female' ? '新女陪名稱' : '新技術打手名稱'}
-                      />
+                      <Field value={newPlayer} onChangeText={setNewPlayer} placeholder={newPlayerType === 'female' ? '新女陪名稱' : '新技術打手名稱'} />
                       <Segment
                         label="打手類型"
                         options={['技術陪', '女陪']}
@@ -777,21 +738,13 @@ export default function NewOrderV2Screen() {
                     </View>
                   ) : null}
 
-                  {category === '小時單' ? (
-                    <Muted>接單等級固定：{hourlyRanks[index] ?? slot.rank} 級</Muted>
-                  ) : null}
-
-                  {category === '女陪單' && femaleMode === '女+技術陪' && index === 1 ? (
-                    <Muted>這位技術陪以 {femaleTechRank} 級接單。</Muted>
-                  ) : null}
+                  {category === '小時單' ? <Muted>接單等級固定：{hourlyRanks[index] ?? slot.rank} 級</Muted> : null}
+                  {category === '女陪單' && femaleMode === '女+技術陪' && index === 1 ? <Muted>這位技術陪以 {femaleTechRank} 級接單。</Muted> : null}
 
                   <Text style={styles.label}>{fieldLabel}實拿金額</Text>
                   <Field
                     value={slot.pay}
-                    onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index
-                      ? { ...s, pay: value }
-                      : s
-                    ))}
+                    onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, pay: value } : s))}
                     keyboardType="decimal-pad"
                   />
                 </View>
@@ -803,42 +756,44 @@ export default function NewOrderV2Screen() {
         <Card>
           <H2>{requiresPlayers ? '4. 派單' : '3. 派單'}</H2>
 
-          <Dropdown
-            label="派單人"
-            value={dispatcherName || '點這裡選擇派單人'}
-            open={dispatcherOpen}
-            onToggle={() => setDispatcherOpen(!dispatcherOpen)}
-          >
+          <Dropdown label="派單人" value={dispatcherName || '點這裡選擇派單人'} open={dispatcherOpen} onToggle={() => setDispatcherOpen(!dispatcherOpen)}>
             <ScrollView style={styles.menuScroll} nestedScrollEnabled>
               {dispatchers.map((item) => (
-                <Choice
-                  key={item.id}
-                  text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`}
-                  onPress={() => chooseDispatcher(item)}
-                />
+                <Choice key={item.id} text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`} onPress={() => chooseDispatcher(item)} />
               ))}
-              <Choice
-                text="不指定派單人"
-                onPress={() => {
-                  setDispatcherId('')
-                  setDispatcherName('')
-                  setDispatcherRole('')
-                  setDispatcherOpen(false)
-                }}
-              />
+              <Choice text="不指定派單人" onPress={() => {
+                setDispatcherId('')
+                setDispatcherName('')
+                setDispatcherRole('')
+                setDispatcherOpen(false)
+              }} />
             </ScrollView>
           </Dropdown>
 
-          <Text style={styles.label}>派單抽成 %</Text>
-          <Field value={dispatchPct} onChangeText={setDispatchPct} keyboardType="decimal-pad" />
-          <Text style={styles.money}>派單人實拿：${dispatchFee}</Text>
+          <Segment
+            label="派單抽成"
+            options={['0%', '2.5%', '3%', '5%', '自訂']}
+            value={dispatchPresetValue}
+            onChange={(value) => {
+              if (value === '自訂') {
+                if (DISPATCH_PRESETS.includes(dispatchPct as (typeof DISPATCH_PRESETS)[number])) setDispatchPct('')
+              } else {
+                setDispatchPct(value.replace('%', ''))
+              }
+            }}
+          />
+
+          {dispatchPresetValue === '自訂' ? (
+            <>
+              <Text style={styles.label}>自訂派單抽成 %</Text>
+              <Field value={dispatchPct} onChangeText={setDispatchPct} keyboardType="decimal-pad" placeholder="例如 4" />
+            </>
+          ) : null}
+
+          <Text style={styles.money}>派單人實拿：${dispatchFee}（{dispatchPct || 0}%）</Text>
         </Card>
 
-        <Button
-          title={busy ? '送出中…' : '送出報單'}
-          onPress={submit}
-          disabled={busy || loading}
-        />
+        <Button title={busy ? '送出中…' : '送出報單'} onPress={submit} disabled={busy || loading} />
       </Screen>
     </ScrollView>
   )
@@ -851,254 +806,98 @@ function CategoryFields(props: any) {
     <View style={{ gap: 10 }}>
       {c === '小時單' ? (
         <>
-          <Segment
-            label="單陪 / 雙陪"
-            options={['單陪', '雙陪']}
-            value={props.hourlyMode}
-            onChange={props.setHourlyMode}
-          />
-          <Segment
-            label={props.hourlyMode === '單陪' ? '小時單等級' : '第 1 個等級'}
-            options={RANKS}
-            value={props.hourlyRanks[0]}
-            onChange={(value) => props.setHourlyRank(0, value)}
-          />
-          {props.hourlyMode === '雙陪' ? (
-            <Segment
-              label="第 2 個等級"
-              options={RANKS}
-              value={props.hourlyRanks[1]}
-              onChange={(value) => props.setHourlyRank(1, value)}
-            />
-          ) : null}
+          <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.hourlyMode} onChange={props.setHourlyMode} />
+          <Segment label={props.hourlyMode === '單陪' ? '小時單等級' : '第 1 個等級'} options={RANKS} value={props.hourlyRanks[0]} onChange={(value) => props.setHourlyRank(0, value)} />
+          {props.hourlyMode === '雙陪' ? <Segment label="第 2 個等級" options={RANKS} value={props.hourlyRanks[1]} onChange={(value) => props.setHourlyRank(1, value)} /> : null}
         </>
       ) : null}
 
-      {['小時單', '保底單', '女陪單'].includes(c) ? (
-        <Segment
-          label="機密 / 絕密"
-          options={SECRECY}
-          value={props.secrecy}
-          onChange={props.setSecrecy}
-        />
-      ) : null}
-
+      {['小時單', '保底單', '女陪單'].includes(c) ? <Segment label="機密 / 絕密" options={SECRECY} value={props.secrecy} onChange={props.setSecrecy} /> : null}
       {['小時單', '教學單', '女陪單'].includes(c) ? (
         <>
           <Text style={styles.label}>小時數</Text>
-          <Field
-            value={props.hours}
-            onChangeText={props.setHours}
-            keyboardType="decimal-pad"
-            placeholder="例如 2.5"
-          />
+          <Field value={props.hours} onChangeText={props.setHours} keyboardType="decimal-pad" placeholder="例如 2.5" />
         </>
       ) : null}
-
-      {c === '保底單' ? (
-        <Segment
-          label="保底金額"
-          options={Object.keys(GUARANTEE_PRICE.機密)}
-          value={props.guaranteeTier}
-          onChange={props.setGuaranteeTier}
-        />
-      ) : null}
-
-      {c === '體驗單' ? (
-        <Segment
-          label="體驗方案"
-          options={['每日', '每週']}
-          value={props.trialPeriod}
-          onChange={props.setTrialPeriod}
-        />
-      ) : null}
+      {c === '保底單' ? <Segment label="保底金額" options={Object.keys(GUARANTEE_PRICE.機密)} value={props.guaranteeTier} onChange={props.setGuaranteeTier} /> : null}
+      {c === '體驗單' ? <Segment label="體驗方案" options={['每日', '每週']} value={props.trialPeriod} onChange={props.setTrialPeriod} /> : null}
 
       {c === '女陪單' ? (
         <>
-          <Segment
-            label="女陪類型"
-            options={['女+技術陪', '純女陪']}
-            value={props.femaleMode}
-            onChange={props.setFemaleMode}
-          />
-          {props.femaleMode === '女+技術陪' ? (
-            <Segment
-              label="技術陪等級"
-              options={RANKS}
-              value={props.femaleTechRank}
-              onChange={props.setFemaleTechRank}
-            />
-          ) : (
-            <Segment
-              label="單陪 / 雙陪"
-              options={['單陪', '雙陪']}
-              value={props.femalePureMode}
-              onChange={props.setFemalePureMode}
-            />
-          )}
+          <Segment label="女陪類型" options={['女+技術陪', '純女陪']} value={props.femaleMode} onChange={props.setFemaleMode} />
+          {props.femaleMode === '女+技術陪'
+            ? <Segment label="技術陪等級" options={RANKS} value={props.femaleTechRank} onChange={props.setFemaleTechRank} />
+            : <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.femalePureMode} onChange={props.setFemalePureMode} />}
         </>
       ) : null}
 
       {c === '娛樂單' ? (
         <>
-          <Segment
-            label="娛樂單種類"
-            options={ENTERTAINMENT_TYPES}
-            value={props.entertainmentType}
-            onChange={props.setEntertainmentType}
-          />
-          {props.entertainmentType !== '自訂' ? (
-            <Segment
-              label="方案"
-              options={props.entertainmentOptions.map((o: any) => o.label)}
-              value={props.entertainmentOption}
-              onChange={props.setEntertainmentOption}
-            />
-          ) : null}
+          <Segment label="娛樂單種類" options={ENTERTAINMENT_TYPES} value={props.entertainmentType} onChange={props.setEntertainmentType} />
+          {props.entertainmentType !== '自訂' ? <Segment label="方案" options={props.entertainmentOptions.map((o: any) => o.label)} value={props.entertainmentOption} onChange={props.setEntertainmentOption} /> : null}
           {props.entertainmentType === '自訂' ? (
             <>
               <Text style={styles.label}>自訂內容</Text>
-              <Field
-                value={props.simpleDetail}
-                onChangeText={props.setSimpleDetail}
-                placeholder="自己填這張娛樂單要做什麼"
-              />
+              <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="自己填這張娛樂單要做什麼" />
               <Muted>自訂單沒有固定金額，總金額預設為 0，可在下方自行修改。</Muted>
             </>
-          ) : props.entertainmentOptions.find((o: any) => o.label === props.entertainmentOption)?.price === 0 ? (
-            <Muted>此方案沒有固定金額，總金額預設為 0。</Muted>
-          ) : null}
+          ) : props.entertainmentOptions.find((o: any) => o.label === props.entertainmentOption)?.price === 0 ? <Muted>此方案沒有固定金額，總金額預設為 0。</Muted> : null}
         </>
       ) : null}
 
       {c === '跑刀' ? (
         <>
-          <Segment
-            label="跑刀"
-            options={['1000w', '5000w', '1e', '自訂']}
-            value={props.runTier}
-            onChange={props.setRunTier}
-          />
-          <Segment
-            label="負責人"
-            options={['華', '望舒', '睡', '其他']}
-            value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'}
-            onChange={(value) => props.setResponsible(value === '其他' ? '' : value)}
-          />
-          {!['華', '望舒', '睡'].includes(props.responsible) ? (
-            <Field
-              value={props.responsible}
-              onChangeText={props.setResponsible}
-              placeholder="其他負責人"
-            />
-          ) : null}
+          <Segment label="跑刀" options={['1000w', '5000w', '1e', '自訂']} value={props.runTier} onChange={props.setRunTier} />
+          <Segment label="負責人" options={['華', '望舒', '睡', '其他']} value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'} onChange={(value) => props.setResponsible(value === '其他' ? '' : value)} />
+          {!['華', '望舒', '睡'].includes(props.responsible) ? <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="其他負責人" /> : null}
         </>
       ) : null}
 
       {c === '撞車' ? (
         <>
-          <Segment
-            label="撞車"
-            options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']}
-            value={props.collisionTier}
-            onChange={props.setCollisionTier}
-          />
-          <Field
-            value={props.responsible}
-            onChangeText={props.setResponsible}
-            placeholder="負責接的人"
-          />
+          <Segment label="撞車" options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']} value={props.collisionTier} onChange={props.setCollisionTier} />
+          <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" />
         </>
       ) : null}
 
       {['撞紅', '撞子彈', '代解任務'].includes(c) ? (
         <>
-          <Field
-            value={props.simpleDetail}
-            onChangeText={props.setSimpleDetail}
-            placeholder={c === '撞紅' ? '填什麼紅' : c === '撞子彈' ? '填什麼子彈' : '填什麼任務'}
-          />
-          <Field
-            value={props.responsible}
-            onChangeText={props.setResponsible}
-            placeholder="負責接的人"
-          />
+          <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder={c === '撞紅' ? '填什麼紅' : c === '撞子彈' ? '填什麼子彈' : '填什麼任務'} />
+          <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" />
         </>
       ) : null}
 
       {c === '實名' ? (
         <>
-          <Segment
-            label="實名類型"
-            options={['實名', '強改綁']}
-            value={props.identityMode}
-            onChange={props.setIdentityMode}
-          />
+          <Segment label="實名類型" options={['實名', '強改綁']} value={props.identityMode} onChange={props.setIdentityMode} />
           <Muted>負責人固定：林峰</Muted>
         </>
       ) : null}
 
       {c === '賽季3x3' ? (
         <>
-          <Segment
-            label="3x3"
-            options={['台服', '陸服', '部分/造型']}
-            value={props.seasonMode}
-            onChange={props.setSeasonMode}
-          />
-          {props.seasonMode === '部分/造型' ? (
-            <Field
-              value={props.simpleDetail}
-              onChangeText={props.setSimpleDetail}
-              placeholder="做哪個部分 / 造型"
-            />
-          ) : null}
+          <Segment label="3x3" options={['台服', '陸服', '部分/造型']} value={props.seasonMode} onChange={props.setSeasonMode} />
+          {props.seasonMode === '部分/造型' ? <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="做哪個部分 / 造型" /> : null}
           <Muted>負責人固定：林峰</Muted>
         </>
       ) : null}
 
-      {c === '調畫質' ? (
-        <Muted>固定 $520｜負責人：林峰｜派單不抽成。</Muted>
-      ) : null}
+      {c === '調畫質' ? <Muted>固定 $520｜負責人：林峰｜派單不抽成。</Muted> : null}
 
       {c === '代儲' ? (
         <>
           <Text style={styles.label}>代儲品項</Text>
           <ScrollView style={styles.menuScroll} nestedScrollEnabled>
-            {TOPUP_OPTIONS.map((option, index) => (
-              <Choice
-                key={option.label}
-                text={`${option.label}｜老闆 $${option.customer}｜${option.rmb} RMB`}
-                onPress={() => props.setTopupIndex(index)}
-              />
-            ))}
-            <Choice
-              text="其他 / 自訂代儲"
-              accent
-              onPress={() => props.setTopupIndex(null)}
-            />
+            {TOPUP_OPTIONS.map((option, index) => <Choice key={option.label} text={`${option.label}｜老闆 $${option.customer}｜${option.rmb} RMB`} onPress={() => props.setTopupIndex(index)} />)}
+            <Choice text="其他 / 自訂代儲" accent onPress={() => props.setTopupIndex(null)} />
           </ScrollView>
           {props.topupIndex === null ? (
             <>
-              <Field
-                value={props.simpleDetail}
-                onChangeText={props.setSimpleDetail}
-                placeholder="自訂代儲內容"
-              />
-              <Field
-                value={props.topupRmb}
-                onChangeText={props.setTopupRmb}
-                keyboardType="decimal-pad"
-                placeholder="RMB 金額"
-              />
+              <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="自訂代儲內容" />
+              <Field value={props.topupRmb} onChangeText={props.setTopupRmb} keyboardType="decimal-pad" placeholder="RMB 金額" />
             </>
           ) : null}
-          <Segment
-            label="負責充值"
-            options={['小白', '莫北', 'BoBo']}
-            value={props.responsible}
-            onChange={props.setResponsible}
-          />
+          <Segment label="負責充值" options={['小白', '莫北', 'BoBo']} value={props.responsible} onChange={props.setResponsible} />
         </>
       ) : null}
 
@@ -1107,18 +906,7 @@ function CategoryFields(props: any) {
   )
 }
 
-function SearchPicker({
-  label,
-  selectedLabel,
-  open,
-  onToggle,
-  query,
-  setQuery,
-  items,
-  onSelect,
-  addLabel,
-  onAdd
-}: any) {
+function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd }: any) {
   const q = query.trim().toLowerCase()
   const filtered = items.filter((item: SearchItem) => !q || (item.searchText ?? item.label).toLowerCase().includes(q))
 
@@ -1126,14 +914,8 @@ function SearchPicker({
     <Dropdown label={label} value={selectedLabel} open={open} onToggle={onToggle}>
       <View style={{ gap: 8, paddingTop: 8 }}>
         <Field value={query} onChangeText={setQuery} placeholder={`搜尋${label}`} />
-        <ScrollView
-          style={styles.searchResults}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-        >
-          {filtered.map((item: SearchItem) => (
-            <Choice key={item.id} text={item.label} onPress={() => onSelect(item)} />
-          ))}
+        <ScrollView style={styles.searchResults} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+          {filtered.map((item: SearchItem) => <Choice key={item.id} text={item.label} onPress={() => onSelect(item)} />)}
           {filtered.length === 0 ? <Text style={styles.emptyText}>找不到符合資料</Text> : null}
         </ScrollView>
         <Choice text={addLabel} onPress={onAdd} accent />
@@ -1155,15 +937,7 @@ function Dropdown({ label, value, open, onToggle, children }: any) {
   )
 }
 
-function Choice({
-  text,
-  onPress,
-  accent = false
-}: {
-  text: string
-  onPress: () => void
-  accent?: boolean
-}) {
+function Choice({ text, onPress, accent = false }: { text: string; onPress: () => void; accent?: boolean }) {
   return (
     <Pressable style={styles.choice} onPress={onPress}>
       <Text style={[styles.choiceText, accent && { color: colors.accent }]}>{text}</Text>
@@ -1171,27 +945,13 @@ function Choice({
   )
 }
 
-function Segment({
-  label,
-  options,
-  value,
-  onChange
-}: {
-  label: string
-  options: readonly string[]
-  value: string
-  onChange: (value: string) => void
-}) {
+function Segment({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string; onChange: (value: string) => void }) {
   return (
     <View style={{ gap: 7 }}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.segment}>
         {options.map((option) => (
-          <Pressable
-            key={option}
-            onPress={() => onChange(option)}
-            style={[styles.segmentItem, value === option && styles.segmentActive]}
-          >
+          <Pressable key={option} onPress={() => onChange(option)} style={[styles.segmentItem, value === option && styles.segmentActive]}>
             <Text style={[styles.segmentText, value === option && styles.segmentTextActive]}>{option}</Text>
           </Pressable>
         ))}
@@ -1247,18 +1007,8 @@ const styles = StyleSheet.create({
   segmentActive: { borderColor: colors.accent, backgroundColor: colors.accent },
   segmentText: { color: colors.text, fontWeight: '700' },
   segmentTextActive: { color: '#051018' },
-  playerBox: {
-    gap: 9,
-    paddingBottom: 14,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10
-  },
+  playerBox: { gap: 9, paddingBottom: 14, borderBottomColor: colors.border, borderBottomWidth: 1 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   link: { color: colors.accent, fontWeight: '800' },
   money: { color: colors.accent, fontSize: 20, fontWeight: '800' }
 })
