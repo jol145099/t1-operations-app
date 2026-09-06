@@ -171,6 +171,7 @@ export default function NewOrderScreen() {
     identityMode,
     seasonMode,
     topupIndex,
+    amountManual,
     slots.length,
     slots.map((slot) => slot.rank).join('|')
   ])
