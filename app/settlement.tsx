@@ -22,13 +22,33 @@ function currentSettlementPeriod(now = new Date()): Period {
   const m = now.getMonth()
   const d = now.getDate()
 
-  if (d < 15) {
-    return { start: localDate(y, m, 1), end: localDate(y, m, 14), nextExclusive: localDate(y, m, 15), payout: localDate(y, m, 15) }
+  // 結算日當天也算進本期，且每一筆只會被計算一次：
+  // 1 號結算 = 上月 16 號 ～ 本月 1 號
+  // 15 號結算 = 本月 2 號 ～ 本月 15 號
+  if (d === 1) {
+    return {
+      start: localDate(y, m - 1, 16),
+      end: localDate(y, m, 1),
+      nextExclusive: localDate(y, m, 2),
+      payout: localDate(y, m, 1)
+    }
   }
 
-  const nextMonth = localDate(y, m + 1, 1)
-  const monthEnd = new Date(nextMonth.getTime() - 24 * 60 * 60 * 1000)
-  return { start: localDate(y, m, 15), end: monthEnd, nextExclusive: nextMonth, payout: nextMonth }
+  if (d <= 15) {
+    return {
+      start: localDate(y, m, 2),
+      end: localDate(y, m, 15),
+      nextExclusive: localDate(y, m, 16),
+      payout: localDate(y, m, 15)
+    }
+  }
+
+  return {
+    start: localDate(y, m, 16),
+    end: localDate(y, m + 1, 1),
+    nextExclusive: localDate(y, m + 1, 2),
+    payout: localDate(y, m + 1, 1)
+  }
 }
 
 function dateLabel(date: Date) {
@@ -112,7 +132,7 @@ export default function SettlementScreen() {
         <Card>
           <H2>本期：{dateLabel(period.start)} → {dateLabel(period.end)}</H2>
           <Text style={styles.payout}>結算日：{dateLabel(period.payout)}</Text>
-          <Muted>固定每月 1 號與 15 號結算。</Muted>
+          <Muted>固定每月 1 號與 15 號結算，結算日當天也包含在本期。</Muted>
         </Card>
 
         {error ? <Card><Text style={styles.error}>讀取結算資料失敗：{error}</Text></Card> : null}
