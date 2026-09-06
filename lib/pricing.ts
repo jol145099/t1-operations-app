@@ -19,25 +19,14 @@ export type ServiceCategory =
 
 export type Secrecy = '機密' | '絕密'
 export type Rank = 'B' | 'A' | 'S' | 'SR'
+export type HourlyMode = '單陪' | '雙陪'
 
-export const SERVICE_CATEGORIES: ServiceCategory[] = [
-  '小時單',
-  '保底單',
-  '體驗單',
-  '教學單',
-  '勇敢者',
-  '女陪單',
-  '娛樂單',
-  '跑刀',
-  '撞車',
-  '撞紅',
-  '撞子彈',
-  '代解任務',
-  '實名',
-  '賽季3x3',
-  '調畫質',
-  '代儲',
-  '其他（訂製單）'
+export const SERVICE_GROUPS: { label: string; items: ServiceCategory[] }[] = [
+  { label: '護航陪玩', items: ['小時單', '保底單', '體驗單', '教學單', '勇敢者'] },
+  { label: '女陪單', items: ['女陪單'] },
+  { label: '娛樂單', items: ['娛樂單'] },
+  { label: '跑刀撞車', items: ['跑刀', '撞車', '撞紅', '撞子彈'] },
+  { label: '其他服務', items: ['代解任務', '實名', '賽季3x3', '調畫質', '代儲', '其他（訂製單）'] }
 ]
 
 export const HOURLY_PRICE: Record<Secrecy, Record<Rank, number>> = {
@@ -74,6 +63,36 @@ export const COLLISION_PRICE: Record<'1000w' | '1500w' | '3000w' | '5000w' | '1e
   '1e': 2830
 }
 
+export const ENTERTAINMENT_OPTIONS = {
+  賭紅單: [
+    { label: '出1紅', price: 580 },
+    { label: '出2紅', price: 1100 },
+    { label: '單局出2紅', price: 1400 },
+    { label: '出大紅', price: 2100 }
+  ],
+  家豪單: [{ label: '家豪單', price: 1588 }],
+  小小巨人單: [
+    { label: '小巨人', price: 5268 },
+    { label: '迷你巨人', price: 2245 },
+    { label: '自訂', price: 0 }
+  ],
+  賭約單: [
+    { label: '賭油', price: 4680 },
+    { label: '賭福利設備', price: 6100 },
+    { label: '其他', price: 0 }
+  ],
+  環遊航天: [
+    { label: '2處', price: 1888 },
+    { label: '3處', price: 3628 },
+    { label: '4處', price: 5518 },
+    { label: '5處', price: 7688 },
+    { label: '6處', price: 11188 },
+    { label: '7處', price: 15828 }
+  ]
+} as const
+
+export type EntertainmentType = keyof typeof ENTERTAINMENT_OPTIONS
+
 export const TOPUP_OPTIONS = [
   { label: '60 三角幣', customer: 50, rmb: 6 },
   { label: '320 三角幣', customer: 180, rmb: 30 },
@@ -97,8 +116,8 @@ export function defaultDispatchRate(category: ServiceCategory) {
   return 0.05
 }
 
-export function hourlyPricing(secrecy: Secrecy, hours: number, ranks: Rank[]) {
-  const singleMultiplier = ranks.length === 1 ? 1.2 : 1
+export function hourlyPricing(secrecy: Secrecy, hours: number, ranks: Rank[], mode: HourlyMode) {
+  const singleMultiplier = mode === '單陪' ? 1.2 : 1
   const bases = ranks.map((rank) => HOURLY_PRICE[secrecy][rank])
   return {
     total: ceilMoney(bases.reduce((sum, price) => sum + price, 0) * hours * singleMultiplier),
@@ -146,8 +165,9 @@ export function femalePurePricing(secrecy: Secrecy, mode: '單陪' | '雙陪', h
 }
 
 export function entertainmentPricing(total: number) {
-  const pay = ceilMoney((total / 2) * 0.8)
-  return { total: ceilMoney(total), pays: [pay, pay] }
+  const safeTotal = ceilMoney(Math.max(0, total))
+  const pay = ceilMoney((safeTotal / 2) * 0.8)
+  return { total: safeTotal, pays: [pay, pay] }
 }
 
 export function shouldRequirePlayers(category: ServiceCategory) {
