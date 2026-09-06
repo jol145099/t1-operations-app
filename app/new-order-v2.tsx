@@ -104,7 +104,6 @@ export default function NewOrderV2Screen() {
   const [topupRmb, setTopupRmb] = useState('6')
   const [simpleDetail, setSimpleDetail] = useState('')
   const [responsible, setResponsible] = useState('')
-  const [customNeedsPlayers, setCustomNeedsPlayers] = useState(false)
 
   const [slots, setSlots] = useState<PlayerSlot[]>([blankSlot('B')])
   const [playerOpen, setPlayerOpen] = useState<number | null>(null)
@@ -129,16 +128,18 @@ export default function NewOrderV2Screen() {
     setLoading(false)
     const error = c.error || p.error || d.error || t.error
     if (error) return Alert.alert('讀取資料失敗', error.message)
+
     setCustomers((c.data ?? []) as Customer[])
     setPlayersList((p.data ?? []) as Player[])
     setDispatchers((d.data ?? []) as Dispatcher[])
     setOrderTypes((t.data ?? []) as OrderType[])
+
     const me = (d.data ?? []).find((item: any) => item.id === profile?.id) as Dispatcher | undefined
     if (me) chooseDispatcher(me)
   }
 
   const groupItems = SERVICE_GROUPS.find((group) => group.label === serviceGroup)?.items ?? []
-  const requiresPlayers = category === '其他（訂製單）' ? customNeedsPlayers : shouldRequirePlayers(category)
+  const requiresPlayers = shouldRequirePlayers(category)
   const nominalRate = Math.max(0, Number(dispatchPct || 0) / 100)
   const currentAmount = Math.max(0, Number(amount || 0))
   const dispatchFee = ceilMoney(currentAmount * nominalRate)
@@ -152,14 +153,32 @@ export default function NewOrderV2Screen() {
 
   useEffect(() => {
     recalculate()
-  }, [category, secrecy, hours, hourlyMode, hourlyRanks.join('|'), guaranteeTier, trialPeriod, femaleMode, femalePureMode, femaleTechRank, entertainmentType, entertainmentOption, runTier, collisionTier, identityMode, seasonMode, topupIndex, amountManual])
+  }, [
+    category,
+    secrecy,
+    hours,
+    hourlyMode,
+    hourlyRanks.join('|'),
+    guaranteeTier,
+    trialPeriod,
+    femaleMode,
+    femalePureMode,
+    femaleTechRank,
+    entertainmentType,
+    entertainmentOption,
+    runTier,
+    collisionTier,
+    identityMode,
+    seasonMode,
+    topupIndex,
+    amountManual
+  ])
 
   function resetCategory(next: ServiceCategory) {
     setSimpleDetail('')
     setPlayerQueries({})
     setPlayerOpen(null)
     setShowAddPlayer(null)
-    setCustomNeedsPlayers(false)
     setResponsible(['實名', '賽季3x3', '調畫質'].includes(next) ? '林峰' : next === '跑刀' ? '華' : next === '代儲' ? '小白' : '')
 
     if (next === '小時單') {
@@ -181,6 +200,7 @@ export default function NewOrderV2Screen() {
 
   function changeHourlyMode(mode: HourlyMode) {
     setHourlyMode(mode)
+
     if (mode === '單陪') {
       const rank = hourlyRanks[0] ?? 'B'
       setHourlyRanks([rank])
@@ -194,6 +214,7 @@ export default function NewOrderV2Screen() {
         { ...(current[1] ?? blankSlot(second)), rank: second }
       ])
     }
+
     setAmountManual(false)
   }
 
@@ -203,6 +224,7 @@ export default function NewOrderV2Screen() {
       next[index] = rank
       return next
     })
+
     setSlots((current) => current.map((slot, i) => i === index ? { ...slot, rank } : slot))
     setAmountManual(false)
   }
@@ -211,11 +233,13 @@ export default function NewOrderV2Screen() {
     setFemaleMode(mode)
     setPlayerQueries({})
     setPlayerOpen(null)
+
     if (mode === '女+技術陪') {
       setSlots([blankSlot(), blankSlot(femaleTechRank)])
     } else {
       setSlots(femalePureMode === '單陪' ? [blankSlot()] : [blankSlot(), blankSlot()])
     }
+
     setAmountManual(false)
   }
 
@@ -241,34 +265,56 @@ export default function NewOrderV2Screen() {
     if (category === '小時單' && h > 0) {
       total = hourlyPricing(secrecy, h, hourlyRanks, hourlyMode).total
       const multiplier = hourlyMode === '單陪' ? 1.2 : 1
-      pays = slots.map((slot) => ceilMoney(HOURLY_PRICE[secrecy][slot.rank] * h * multiplier * 0.8))
+      pays = hourlyRanks.map((rank) => ceilMoney(HOURLY_PRICE[secrecy][rank] * h * multiplier * 0.8))
     } else if (category === '保底單') {
-      const result = guaranteePricing(secrecy, guaranteeTier); total = result.total; pays = result.pays
+      const result = guaranteePricing(secrecy, guaranteeTier)
+      total = result.total
+      pays = result.pays
     } else if (category === '體驗單') {
-      const result = trialPricing(trialPeriod); total = result.total; pays = result.pays
+      const result = trialPricing(trialPeriod)
+      total = result.total
+      pays = result.pays
     } else if (category === '教學單' && h > 0) {
-      const result = teachingPricing(h); total = result.total; pays = result.pays
+      const result = teachingPricing(h)
+      total = result.total
+      pays = result.pays
     } else if (category === '勇敢者') {
-      const result = bravePricing(); total = result.total; pays = result.pays
+      const result = bravePricing()
+      total = result.total
+      pays = result.pays
     } else if (category === '女陪單' && h > 0) {
-      const result = femaleMode === '女+技術陪' ? femaleTechPricing(secrecy, femaleTechRank, h) : femalePurePricing(secrecy, femalePureMode, h)
-      total = result.total; pays = result.pays
+      const result = femaleMode === '女+技術陪'
+        ? femaleTechPricing(secrecy, femaleTechRank, h)
+        : femalePurePricing(secrecy, femalePureMode, h)
+      total = result.total
+      pays = result.pays
     } else if (category === '娛樂單') {
       total = entertainmentOptions.find((option) => option.label === entertainmentOption)?.price ?? 0
       pays = entertainmentPricing(total).pays
-    } else if (category === '跑刀' && runTier !== '自訂') total = RUN_KNIFE_PRICE[runTier]
-    else if (category === '撞車' && collisionTier !== '自訂') total = COLLISION_PRICE[collisionTier]
-    else if (category === '實名') total = identityMode === '實名' ? 1100 : 1750
-    else if (category === '賽季3x3' && seasonMode !== '部分/造型') total = seasonMode === '台服' ? 3500 : 3700
-    else if (category === '調畫質') total = 520
-    else if (category === '代儲' && topupIndex !== null) {
+    } else if (category === '跑刀' && runTier !== '自訂') {
+      total = RUN_KNIFE_PRICE[runTier]
+    } else if (category === '撞車' && collisionTier !== '自訂') {
+      total = COLLISION_PRICE[collisionTier]
+    } else if (category === '實名') {
+      total = identityMode === '實名' ? 1100 : 1750
+    } else if (category === '賽季3x3' && seasonMode !== '部分/造型') {
+      total = seasonMode === '台服' ? 3500 : 3700
+    } else if (category === '調畫質') {
+      total = 520
+    } else if (category === '代儲' && topupIndex !== null) {
       total = TOPUP_OPTIONS[topupIndex].customer
       setTopupRmb(String(TOPUP_OPTIONS[topupIndex].rmb))
     }
 
     setSystemAmount(total)
     if (!amountManual || force) setAmount(String(total))
-    if (pays.length) setSlots((current) => current.map((slot, index) => ({ ...slot, pay: String(pays[index] ?? 0) })))
+    if (pays.length) {
+      setSlots((current) => current.map((slot, index) => ({
+        ...slot,
+        rank: category === '小時單' ? (hourlyRanks[index] ?? slot.rank) : slot.rank,
+        pay: String(pays[index] ?? 0)
+      })))
+    }
   }
 
   function requiredPlayerType(index: number): PlayerType {
@@ -278,6 +324,7 @@ export default function NewOrderV2Screen() {
   }
 
   function playerFieldLabel(index: number) {
+    if (category === '小時單') return `打手 ${index + 1}（${hourlyRanks[index] ?? 'B'}級）`
     if (category !== '女陪單') return `打手 ${index + 1}`
     if (femaleMode === '純女陪') return femalePureMode === '單陪' ? '女陪' : `女陪 ${index + 1}`
     return index === 0 ? '女陪' : `技術陪（${femaleTechRank}級）`
@@ -292,26 +339,52 @@ export default function NewOrderV2Screen() {
   }
 
   async function addCustomer() {
-    const name = newCustomer.trim(); if (!name) return
-    const { data, error } = await supabase.from('customers').insert({ display_name: name }).select('id, display_name, aliases').single()
+    const name = newCustomer.trim()
+    if (!name) return
+
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({ display_name: name })
+      .select('id, display_name, aliases')
+      .single()
+
     if (error || !data) return Alert.alert('新增老闆失敗', error?.message ?? 'Unknown error')
+
     const item = data as Customer
     setCustomers((current) => [...current, item].sort((a, b) => a.display_name.localeCompare(b.display_name)))
-    setCustomerId(item.id); setCustomerName(item.display_name); setCustomerQuery(''); setNewCustomer(''); setShowAddCustomer(false)
+    setCustomerId(item.id)
+    setCustomerName(item.display_name)
+    setCustomerQuery('')
+    setNewCustomer('')
+    setShowAddCustomer(false)
   }
 
   async function addPlayer(index: number) {
-    const name = newPlayer.trim(); if (!name) return
-    const { data, error } = await supabase.from('players').insert({ display_name: name, player_type: newPlayerType }).select('id, display_name, player_type').single()
+    const name = newPlayer.trim()
+    if (!name) return
+
+    const { data, error } = await supabase
+      .from('players')
+      .insert({ display_name: name, player_type: newPlayerType })
+      .select('id, display_name, player_type')
+      .single()
+
     if (error || !data) return Alert.alert('新增打手失敗', error?.message ?? 'Unknown error')
+
     const item = data as Player
     setPlayersList((current) => [...current, item].sort((a, b) => a.display_name.localeCompare(b.display_name)))
-    choosePlayer(index, item); setNewPlayer(''); setShowAddPlayer(null)
+    choosePlayer(index, item)
+    setNewPlayer('')
+    setShowAddPlayer(null)
   }
 
   function choosePlayer(index: number, player: Player) {
-    setSlots((current) => current.map((slot, i) => i === index ? { ...slot, playerId: player.id, playerName: player.display_name } : slot))
-    setPlayerQueries((current) => ({ ...current, [index]: '' })); setPlayerOpen(null)
+    setSlots((current) => current.map((slot, i) => i === index
+      ? { ...slot, playerId: player.id, playerName: player.display_name }
+      : slot
+    ))
+    setPlayerQueries((current) => ({ ...current, [index]: '' }))
+    setPlayerOpen(null)
   }
 
   function setSlotCount(count: number) {
@@ -327,21 +400,53 @@ export default function NewOrderV2Screen() {
     if (category === '保底單') return `${secrecy} · ${guaranteeTier}`
     if (category === '體驗單') return trialPeriod
     if (category === '教學單') return `${hours} 小時`
-    if (category === '女陪單') return femaleMode === '女+技術陪' ? `${secrecy} · 女+${femaleTechRank} · ${hours} 小時` : `${secrecy} · ${femalePureMode} · ${hours} 小時`
-    if (category === '娛樂單') return `${entertainmentType} · ${entertainmentOption}`
+    if (category === '女陪單') {
+      return femaleMode === '女+技術陪'
+        ? `${secrecy} · 女+${femaleTechRank} · ${hours} 小時`
+        : `${secrecy} · ${femalePureMode} · ${hours} 小時`
+    }
+    if (category === '娛樂單') {
+      return entertainmentType === '自訂'
+        ? `自訂 · ${simpleDetail || '未填內容'}`
+        : `${entertainmentType} · ${entertainmentOption}`
+    }
     if (category === '跑刀') return runTier
     if (category === '撞車') return collisionTier
     if (category === '實名') return identityMode
     if (category === '賽季3x3') return seasonMode
     if (category === '代儲') return topupIndex === null ? simpleDetail : TOPUP_OPTIONS[topupIndex].label
     return simpleDetail
-  }, [category, secrecy, hourlyMode, hourlyRanks, hours, guaranteeTier, trialPeriod, femaleMode, femaleTechRank, femalePureMode, entertainmentType, entertainmentOption, runTier, collisionTier, identityMode, seasonMode, topupIndex, simpleDetail])
+  }, [
+    category,
+    secrecy,
+    hourlyMode,
+    hourlyRanks,
+    hours,
+    guaranteeTier,
+    trialPeriod,
+    femaleMode,
+    femaleTechRank,
+    femalePureMode,
+    entertainmentType,
+    entertainmentOption,
+    runTier,
+    collisionTier,
+    identityMode,
+    seasonMode,
+    topupIndex,
+    simpleDetail
+  ])
 
   async function submit() {
     if (!customerId) return Alert.alert('資料不足', '請選擇下單老闆。')
     if (!orderDate.match(/^\d{4}-\d{2}-\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
     if (!dispatcherId && nominalRate > 0) return Alert.alert('資料不足', '有派單抽成時請選擇派單人。')
-    if (requiresPlayers && slots.some((slot) => !slot.playerId)) return Alert.alert('資料不足', '請選擇所有打手。')
+    if (category === '娛樂單' && entertainmentType === '自訂' && !simpleDetail.trim()) {
+      return Alert.alert('資料不足', '請填寫自訂娛樂單內容。')
+    }
+    if (requiresPlayers && slots.some((slot) => !slot.playerId)) {
+      return Alert.alert('資料不足', '請選擇所有打手。')
+    }
 
     const ids = slots.map((slot) => slot.playerId).filter(Boolean)
     if (new Set(ids).size !== ids.length) return Alert.alert('打手重複', '同一張訂單不能重複選同一位打手。')
@@ -349,7 +454,17 @@ export default function NewOrderV2Screen() {
     const dbType = orderTypes.find((type) => type.requires_player === requiresPlayers)
     if (!dbType) return Alert.alert('缺少單種設定', '找不到對應的基礎單種設定。')
 
-    const notes = JSON.stringify({ service_group: serviceGroup, service_category: category, detail: detailSummary, responsible: responsible || null, system_amount: systemAmount, manual_amount: amountManual, nominal_dispatch_fee: dispatchFee, topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null })
+    const notes = JSON.stringify({
+      service_group: serviceGroup,
+      service_category: category,
+      detail: detailSummary,
+      responsible: responsible || null,
+      system_amount: systemAmount,
+      manual_amount: amountManual,
+      nominal_dispatch_fee: dispatchFee,
+      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null
+    })
+
     const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
     const storedRate = currentAmount > 0 ? dispatchFee / currentAmount : 0
 
@@ -369,105 +484,361 @@ export default function NewOrderV2Screen() {
       notes
     }).select('id, order_no').single()
 
-    if (error || !order) { setBusy(false); return Alert.alert('報單失敗', error?.message ?? 'Unknown error') }
+    if (error || !order) {
+      setBusy(false)
+      return Alert.alert('報單失敗', error?.message ?? 'Unknown error')
+    }
 
     if (requiresPlayers) {
-      const { error: assignmentError } = await supabase.from('order_players').insert(slots.map((slot, index) => ({
-        order_id: order.id,
-        player_id: slot.playerId,
-        assigned_pay: ceilMoney(Number(slot.pay || 0)),
-        status: 'assigned',
-        notes: category === '小時單' ? `${slot.rank}級接單` : category === '女陪單' ? `${playerFieldLabel(index)}接單` : null
-      })))
-      if (assignmentError) { setBusy(false); return Alert.alert('訂單已建立，但派打手失敗', assignmentError.message) }
+      const { error: assignmentError } = await supabase.from('order_players').insert(
+        slots.map((slot, index) => ({
+          order_id: order.id,
+          player_id: slot.playerId,
+          assigned_pay: ceilMoney(Number(slot.pay || 0)),
+          status: 'assigned',
+          notes: category === '小時單'
+            ? `${hourlyRanks[index] ?? slot.rank}級接單`
+            : category === '女陪單'
+              ? `${playerFieldLabel(index)}接單`
+              : null
+        }))
+      )
+
+      if (assignmentError) {
+        setBusy(false)
+        return Alert.alert('訂單已建立，但派打手失敗', assignmentError.message)
+      }
     }
 
     setBusy(false)
     Alert.alert('報單完成', `${order.order_no}\n總金額 $${ceilMoney(currentAmount)}\n派單抽成 $${dispatchFee}`)
-    setCustomerId(''); setCustomerName(''); setCustomerQuery(''); setAmountManual(false); setOrderDate(todayLocal()); resetCategory(category); recalculate(true)
+    setCustomerId('')
+    setCustomerName('')
+    setCustomerQuery('')
+    setAmountManual(false)
+    setOrderDate(todayLocal())
+    resetCategory(category)
+    recalculate(true)
   }
 
-  if (!allowed) return <Screen><H1>新增報單</H1><Card><H2>沒有權限</H2><Muted>只有客服與店長/Admin 可以建立訂單。</Muted></Card></Screen>
+  if (!allowed) {
+    return (
+      <Screen>
+        <H1>新增報單</H1>
+        <Card>
+          <H2>沒有權限</H2>
+          <Muted>只有客服與店長/Admin 可以建立訂單。</Muted>
+        </Card>
+      </Screen>
+    )
+  }
 
-  const customerItems: SearchItem[] = customers.map((item) => ({ id: item.id, label: item.display_name, searchText: [item.display_name, ...(item.aliases ?? [])].join(' ') }))
+  const customerItems: SearchItem[] = customers.map((item) => ({
+    id: item.id,
+    label: item.display_name,
+    searchText: [item.display_name, ...(item.aliases ?? [])].join(' ')
+  }))
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      contentContainerStyle={{ flexGrow: 1 }}
+      keyboardShouldPersistTaps="handled"
+    >
       <Screen>
         <H1>新增報單</H1>
         <Muted>{loading ? '正在讀取資料…' : '先選服務分類，再從下一個下拉選單選單種。'}</Muted>
 
         <Card>
           <H2>1. 單種</H2>
-          <Dropdown label="服務分類" value={serviceGroup} open={groupOpen} onToggle={() => setGroupOpen(!groupOpen)}>
-            <ScrollView style={styles.menuScroll} nestedScrollEnabled>{SERVICE_GROUPS.map((group) => <Choice key={group.label} text={group.label} onPress={() => { setServiceGroup(group.label); setGroupOpen(false); const first = group.items[0]; if (first) setCategory(first) }} />)}</ScrollView>
+
+          <Dropdown
+            label="服務分類"
+            value={serviceGroup}
+            open={groupOpen}
+            onToggle={() => setGroupOpen(!groupOpen)}
+          >
+            <ScrollView style={styles.menuScroll} nestedScrollEnabled>
+              {SERVICE_GROUPS.map((group) => (
+                <Choice
+                  key={group.label}
+                  text={group.label}
+                  onPress={() => {
+                    setServiceGroup(group.label)
+                    setGroupOpen(false)
+                    const first = group.items[0]
+                    if (first) setCategory(first)
+                  }}
+                />
+              ))}
+            </ScrollView>
           </Dropdown>
-          <Dropdown label="單種" value={category} open={categoryOpen} onToggle={() => setCategoryOpen(!categoryOpen)}>
-            <ScrollView style={styles.menuScroll} nestedScrollEnabled>{groupItems.map((item) => <Choice key={item} text={item} onPress={() => { setCategory(item); setCategoryOpen(false) }} />)}</ScrollView>
+
+          <Dropdown
+            label="單種"
+            value={category}
+            open={categoryOpen}
+            onToggle={() => setCategoryOpen(!categoryOpen)}
+          >
+            <ScrollView style={styles.menuScroll} nestedScrollEnabled>
+              {groupItems.map((item) => (
+                <Choice
+                  key={item}
+                  text={item}
+                  onPress={() => {
+                    setCategory(item)
+                    setCategoryOpen(false)
+                  }}
+                />
+              ))}
+            </ScrollView>
           </Dropdown>
 
           <CategoryFields
-            category={category} secrecy={secrecy} setSecrecy={setSecrecy} hours={hours} setHours={setHours}
-            hourlyMode={hourlyMode} setHourlyMode={changeHourlyMode} hourlyRanks={hourlyRanks} setHourlyRank={changeHourlyRank}
-            guaranteeTier={guaranteeTier} setGuaranteeTier={setGuaranteeTier} trialPeriod={trialPeriod} setTrialPeriod={setTrialPeriod}
-            femaleMode={femaleMode} setFemaleMode={changeFemaleMode} femalePureMode={femalePureMode} setFemalePureMode={changeFemalePureMode}
-            femaleTechRank={femaleTechRank} setFemaleTechRank={changeFemaleTechRank} entertainmentType={entertainmentType}
-            setEntertainmentType={(value: EntertainmentType) => { const opts = ENTERTAINMENT_OPTIONS[value] as readonly { label: string; price: number }[]; setEntertainmentType(value); setEntertainmentOption(opts[0]?.label ?? ''); setAmountManual(false) }}
-            entertainmentOption={entertainmentOption} setEntertainmentOption={(value: string) => { setEntertainmentOption(value); setAmountManual(false) }} entertainmentOptions={entertainmentOptions}
-            runTier={runTier} setRunTier={setRunTier} collisionTier={collisionTier} setCollisionTier={setCollisionTier}
-            simpleDetail={simpleDetail} setSimpleDetail={setSimpleDetail} identityMode={identityMode} setIdentityMode={setIdentityMode}
-            seasonMode={seasonMode} setSeasonMode={setSeasonMode} topupIndex={topupIndex} setTopupIndex={setTopupIndex}
-            topupRmb={topupRmb} setTopupRmb={setTopupRmb} responsible={responsible} setResponsible={setResponsible}
-            customNeedsPlayers={customNeedsPlayers} setCustomNeedsPlayers={setCustomNeedsPlayers} setSlotCount={setSlotCount}
+            category={category}
+            secrecy={secrecy}
+            setSecrecy={setSecrecy}
+            hours={hours}
+            setHours={setHours}
+            hourlyMode={hourlyMode}
+            setHourlyMode={changeHourlyMode}
+            hourlyRanks={hourlyRanks}
+            setHourlyRank={changeHourlyRank}
+            guaranteeTier={guaranteeTier}
+            setGuaranteeTier={setGuaranteeTier}
+            trialPeriod={trialPeriod}
+            setTrialPeriod={setTrialPeriod}
+            femaleMode={femaleMode}
+            setFemaleMode={changeFemaleMode}
+            femalePureMode={femalePureMode}
+            setFemalePureMode={changeFemalePureMode}
+            femaleTechRank={femaleTechRank}
+            setFemaleTechRank={changeFemaleTechRank}
+            entertainmentType={entertainmentType}
+            setEntertainmentType={(value: EntertainmentType) => {
+              const opts = ENTERTAINMENT_OPTIONS[value] as readonly { label: string; price: number }[]
+              setEntertainmentType(value)
+              setEntertainmentOption(opts[0]?.label ?? '')
+              if (value === '自訂') setSimpleDetail('')
+              setAmountManual(false)
+            }}
+            entertainmentOption={entertainmentOption}
+            setEntertainmentOption={(value: string) => {
+              setEntertainmentOption(value)
+              setAmountManual(false)
+            }}
+            entertainmentOptions={entertainmentOptions}
+            runTier={runTier}
+            setRunTier={setRunTier}
+            collisionTier={collisionTier}
+            setCollisionTier={setCollisionTier}
+            simpleDetail={simpleDetail}
+            setSimpleDetail={setSimpleDetail}
+            identityMode={identityMode}
+            setIdentityMode={setIdentityMode}
+            seasonMode={seasonMode}
+            setSeasonMode={setSeasonMode}
+            topupIndex={topupIndex}
+            setTopupIndex={setTopupIndex}
+            topupRmb={topupRmb}
+            setTopupRmb={setTopupRmb}
+            responsible={responsible}
+            setResponsible={setResponsible}
+            setSlotCount={setSlotCount}
           />
         </Card>
 
         <Card>
           <H2>2. 下單資料</H2>
-          <Text style={styles.label}>下單日期</Text><Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
-          <SearchPicker label="下單老闆" selectedLabel={customerName || '點這裡選擇老闆'} open={customerOpen} onToggle={() => setCustomerOpen(!customerOpen)} query={customerQuery} setQuery={setCustomerQuery} items={customerItems} onSelect={(item: SearchItem) => { setCustomerId(item.id); setCustomerName(item.label); setCustomerQuery(''); setCustomerOpen(false) }} addLabel="＋ 名單沒有？新增老闆" onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }} />
-          {showAddCustomer ? <View style={styles.inline}><Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" /><Button title="新增並選擇" onPress={addCustomer} /><Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} /></View> : null}
+          <Text style={styles.label}>下單日期</Text>
+          <Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
+
+          <SearchPicker
+            label="下單老闆"
+            selectedLabel={customerName || '點這裡選擇老闆'}
+            open={customerOpen}
+            onToggle={() => setCustomerOpen(!customerOpen)}
+            query={customerQuery}
+            setQuery={setCustomerQuery}
+            items={customerItems}
+            onSelect={(item: SearchItem) => {
+              setCustomerId(item.id)
+              setCustomerName(item.label)
+              setCustomerQuery('')
+              setCustomerOpen(false)
+            }}
+            addLabel="＋ 名單沒有？新增老闆"
+            onAdd={() => {
+              setCustomerOpen(false)
+              setShowAddCustomer(true)
+            }}
+          />
+
+          {showAddCustomer ? (
+            <View style={styles.inline}>
+              <Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" />
+              <Button title="新增並選擇" onPress={addCustomer} />
+              <Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} />
+            </View>
+          ) : null}
+
           <Text style={styles.label}>總金額</Text>
-          <Field value={amount} onChangeText={(value) => { setAmount(value); setAmountManual(true); if (category === '娛樂單') { const result = entertainmentPricing(Number(value || 0)); setSlots((current) => current.map((slot, i) => ({ ...slot, pay: String(result.pays[i] ?? 0) }))) } }} keyboardType="decimal-pad" />
-          <View style={styles.summaryRow}><Muted>系統價：${systemAmount}</Muted>{amountManual ? <Pressable onPress={() => { setAmountManual(false); setAmount(String(systemAmount)) }}><Text style={styles.link}>套用系統價</Text></Pressable> : null}</View>
+          <Field
+            value={amount}
+            onChangeText={(value) => {
+              setAmount(value)
+              setAmountManual(true)
+              if (category === '娛樂單') {
+                const result = entertainmentPricing(Number(value || 0))
+                setSlots((current) => current.map((slot, i) => ({
+                  ...slot,
+                  pay: String(result.pays[i] ?? 0)
+                })))
+              }
+            }}
+            keyboardType="decimal-pad"
+          />
+
+          <View style={styles.summaryRow}>
+            <Muted>系統價：${systemAmount}</Muted>
+            {amountManual ? (
+              <Pressable onPress={() => {
+                setAmountManual(false)
+                setAmount(String(systemAmount))
+              }}>
+                <Text style={styles.link}>套用系統價</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </Card>
 
-        {requiresPlayers ? <Card>
-          <H2>3. 打手與實拿</H2>
-          {category === '小時單' ? <Muted>上面選的是這張小時單需要的等級；這裡再指定「哪個打手以哪個等級接單」。</Muted> : null}
-          {category === '女陪單' ? <Muted>{femaleMode === '女+技術陪' ? '女陪欄只顯示女陪名單；技術陪欄只顯示技術打手名單。' : '純女陪只會顯示女陪名單。'}</Muted> : null}
-          {slots.map((slot, index) => {
-            const expectedType = requiredPlayerType(index)
-            const playerItems: SearchItem[] = playersList
-              .filter((player) => player.player_type === expectedType)
-              .filter((player) => !slots.some((other, otherIndex) => otherIndex !== index && other.playerId === player.id))
-              .map((player) => ({ id: player.id, label: player.display_name }))
-            const fieldLabel = playerFieldLabel(index)
-            return <View key={index} style={styles.playerBox}>
-              <SearchPicker label={fieldLabel} selectedLabel={slot.playerName || `點這裡選擇${fieldLabel}`} open={playerOpen === index} onToggle={() => setPlayerOpen(playerOpen === index ? null : index)} query={playerQueries[index] ?? ''} setQuery={(value: string) => setPlayerQueries((current) => ({ ...current, [index]: value }))} items={playerItems} onSelect={(item: SearchItem) => { const player = playersList.find((p) => p.id === item.id); if (player) choosePlayer(index, player) }} addLabel={`＋ 名單沒有？新增${expectedType === 'female' ? '女陪' : '技術打手'}`} onAdd={() => { setPlayerOpen(null); setShowAddPlayer(index); setNewPlayerType(expectedType); setNewPlayer('') }} />
-              {showAddPlayer === index ? <View style={styles.inline}>
-                <Field value={newPlayer} onChangeText={setNewPlayer} placeholder={newPlayerType === 'female' ? '新女陪名稱' : '新技術打手名稱'} />
-                <Segment label="打手類型" options={['技術陪', '女陪']} value={newPlayerType === 'female' ? '女陪' : '技術陪'} onChange={(value) => setNewPlayerType(value === '女陪' ? 'female' : 'technical')} />
-                <Button title="新增並選擇" onPress={() => addPlayer(index)} />
-                <Button title="取消" tone="neutral" onPress={() => setShowAddPlayer(null)} />
-              </View> : null}
-              {category === '小時單' ? <Segment label="這位打手以哪個等級接單" options={Array.from(new Set(hourlyRanks))} value={slot.rank} onChange={(value) => { const rank = value as Rank; setSlots((current) => current.map((s, i) => i === index ? { ...s, rank } : s)); setAmountManual(false) }} /> : null}
-              {category === '女陪單' && femaleMode === '女+技術陪' && index === 1 ? <Muted>這位技術陪以 {femaleTechRank} 級接單。</Muted> : null}
-              <Text style={styles.label}>{fieldLabel}實拿金額</Text><Field value={slot.pay} onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, pay: value } : s))} keyboardType="decimal-pad" />
-            </View>
-          })}
-        </Card> : null}
+        {requiresPlayers ? (
+          <Card>
+            <H2>3. 打手與實拿</H2>
+
+            {category === '小時單' ? (
+              <Muted>打手等級直接固定跟隨上面設定，不需要在下面再選一次。</Muted>
+            ) : null}
+
+            {category === '女陪單' ? (
+              <Muted>
+                {femaleMode === '女+技術陪'
+                  ? '女陪欄只顯示女陪名單；技術陪欄只顯示技術打手名單。'
+                  : '純女陪只會顯示女陪名單。'}
+              </Muted>
+            ) : null}
+
+            {slots.map((slot, index) => {
+              const expectedType = requiredPlayerType(index)
+              const playerItems: SearchItem[] = playersList
+                .filter((player) => player.player_type === expectedType)
+                .filter((player) => !slots.some((other, otherIndex) => otherIndex !== index && other.playerId === player.id))
+                .map((player) => ({ id: player.id, label: player.display_name }))
+              const fieldLabel = playerFieldLabel(index)
+
+              return (
+                <View key={index} style={styles.playerBox}>
+                  <SearchPicker
+                    label={fieldLabel}
+                    selectedLabel={slot.playerName || `點這裡選擇${fieldLabel}`}
+                    open={playerOpen === index}
+                    onToggle={() => setPlayerOpen(playerOpen === index ? null : index)}
+                    query={playerQueries[index] ?? ''}
+                    setQuery={(value: string) => setPlayerQueries((current) => ({ ...current, [index]: value }))}
+                    items={playerItems}
+                    onSelect={(item: SearchItem) => {
+                      const player = playersList.find((p) => p.id === item.id)
+                      if (player) choosePlayer(index, player)
+                    }}
+                    addLabel={`＋ 名單沒有？新增${expectedType === 'female' ? '女陪' : '技術打手'}`}
+                    onAdd={() => {
+                      setPlayerOpen(null)
+                      setShowAddPlayer(index)
+                      setNewPlayerType(expectedType)
+                      setNewPlayer('')
+                    }}
+                  />
+
+                  {showAddPlayer === index ? (
+                    <View style={styles.inline}>
+                      <Field
+                        value={newPlayer}
+                        onChangeText={setNewPlayer}
+                        placeholder={newPlayerType === 'female' ? '新女陪名稱' : '新技術打手名稱'}
+                      />
+                      <Segment
+                        label="打手類型"
+                        options={['技術陪', '女陪']}
+                        value={newPlayerType === 'female' ? '女陪' : '技術陪'}
+                        onChange={(value) => setNewPlayerType(value === '女陪' ? 'female' : 'technical')}
+                      />
+                      <Button title="新增並選擇" onPress={() => addPlayer(index)} />
+                      <Button title="取消" tone="neutral" onPress={() => setShowAddPlayer(null)} />
+                    </View>
+                  ) : null}
+
+                  {category === '小時單' ? (
+                    <Muted>接單等級固定：{hourlyRanks[index] ?? slot.rank} 級</Muted>
+                  ) : null}
+
+                  {category === '女陪單' && femaleMode === '女+技術陪' && index === 1 ? (
+                    <Muted>這位技術陪以 {femaleTechRank} 級接單。</Muted>
+                  ) : null}
+
+                  <Text style={styles.label}>{fieldLabel}實拿金額</Text>
+                  <Field
+                    value={slot.pay}
+                    onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index
+                      ? { ...s, pay: value }
+                      : s
+                    ))}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              )
+            })}
+          </Card>
+        ) : null}
 
         <Card>
           <H2>{requiresPlayers ? '4. 派單' : '3. 派單'}</H2>
-          <Dropdown label="派單人" value={dispatcherName || '點這裡選擇派單人'} open={dispatcherOpen} onToggle={() => setDispatcherOpen(!dispatcherOpen)}>
-            <ScrollView style={styles.menuScroll} nestedScrollEnabled>{dispatchers.map((item) => <Choice key={item.id} text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`} onPress={() => chooseDispatcher(item)} />)}<Choice text="不指定派單人" onPress={() => { setDispatcherId(''); setDispatcherName(''); setDispatcherRole(''); setDispatcherOpen(false) }} /></ScrollView>
+
+          <Dropdown
+            label="派單人"
+            value={dispatcherName || '點這裡選擇派單人'}
+            open={dispatcherOpen}
+            onToggle={() => setDispatcherOpen(!dispatcherOpen)}
+          >
+            <ScrollView style={styles.menuScroll} nestedScrollEnabled>
+              {dispatchers.map((item) => (
+                <Choice
+                  key={item.id}
+                  text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`}
+                  onPress={() => chooseDispatcher(item)}
+                />
+              ))}
+              <Choice
+                text="不指定派單人"
+                onPress={() => {
+                  setDispatcherId('')
+                  setDispatcherName('')
+                  setDispatcherRole('')
+                  setDispatcherOpen(false)
+                }}
+              />
+            </ScrollView>
           </Dropdown>
-          <Text style={styles.label}>派單抽成 %</Text><Field value={dispatchPct} onChangeText={setDispatchPct} keyboardType="decimal-pad" />
+
+          <Text style={styles.label}>派單抽成 %</Text>
+          <Field value={dispatchPct} onChangeText={setDispatchPct} keyboardType="decimal-pad" />
           <Text style={styles.money}>派單人實拿：${dispatchFee}</Text>
         </Card>
 
-        <Button title={busy ? '送出中…' : '送出報單'} onPress={submit} disabled={busy || loading} />
+        <Button
+          title={busy ? '送出中…' : '送出報單'}
+          onPress={submit}
+          disabled={busy || loading}
+        />
       </Screen>
     </ScrollView>
   )
@@ -475,67 +846,419 @@ export default function NewOrderV2Screen() {
 
 function CategoryFields(props: any) {
   const c: ServiceCategory = props.category
-  return <View style={{ gap: 10 }}>
-    {c === '小時單' ? <>
-      <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.hourlyMode} onChange={props.setHourlyMode} />
-      <Segment label={props.hourlyMode === '單陪' ? '小時單等級' : '第 1 個等級'} options={RANKS} value={props.hourlyRanks[0]} onChange={(value) => props.setHourlyRank(0, value)} />
-      {props.hourlyMode === '雙陪' ? <Segment label="第 2 個等級" options={RANKS} value={props.hourlyRanks[1]} onChange={(value) => props.setHourlyRank(1, value)} /> : null}
-    </> : null}
-    {['小時單', '保底單', '女陪單'].includes(c) ? <Segment label="機密 / 絕密" options={SECRECY} value={props.secrecy} onChange={props.setSecrecy} /> : null}
-    {['小時單', '教學單', '女陪單'].includes(c) ? <><Text style={styles.label}>小時數</Text><Field value={props.hours} onChangeText={props.setHours} keyboardType="decimal-pad" placeholder="例如 2.5" /></> : null}
-    {c === '保底單' ? <Segment label="保底金額" options={Object.keys(GUARANTEE_PRICE.機密)} value={props.guaranteeTier} onChange={props.setGuaranteeTier} /> : null}
-    {c === '體驗單' ? <Segment label="體驗方案" options={['每日', '每週']} value={props.trialPeriod} onChange={props.setTrialPeriod} /> : null}
-    {c === '女陪單' ? <><Segment label="女陪類型" options={['女+技術陪', '純女陪']} value={props.femaleMode} onChange={props.setFemaleMode} />{props.femaleMode === '女+技術陪' ? <Segment label="技術陪等級" options={RANKS} value={props.femaleTechRank} onChange={props.setFemaleTechRank} /> : <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.femalePureMode} onChange={props.setFemalePureMode} />}</> : null}
-    {c === '娛樂單' ? <><Segment label="娛樂單種類" options={ENTERTAINMENT_TYPES} value={props.entertainmentType} onChange={props.setEntertainmentType} /><Segment label="方案" options={props.entertainmentOptions.map((o: any) => o.label)} value={props.entertainmentOption} onChange={props.setEntertainmentOption} />{props.entertainmentOptions.find((o: any) => o.label === props.entertainmentOption)?.price === 0 ? <Muted>此方案沒有固定金額，總金額預設為 0。</Muted> : null}</> : null}
-    {c === '跑刀' ? <><Segment label="跑刀" options={['1000w', '5000w', '1e', '自訂']} value={props.runTier} onChange={props.setRunTier} /><Segment label="負責人" options={['華', '望舒', '睡', '其他']} value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'} onChange={(value) => props.setResponsible(value === '其他' ? '' : value)} />{!['華', '望舒', '睡'].includes(props.responsible) ? <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="其他負責人" /> : null}</> : null}
-    {c === '撞車' ? <><Segment label="撞車" options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']} value={props.collisionTier} onChange={props.setCollisionTier} /><Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" /></> : null}
-    {['撞紅', '撞子彈', '代解任務'].includes(c) ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder={c === '撞紅' ? '填什麼紅' : c === '撞子彈' ? '填什麼子彈' : '填什麼任務'} /><Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" /></> : null}
-    {c === '實名' ? <><Segment label="實名類型" options={['實名', '強改綁']} value={props.identityMode} onChange={props.setIdentityMode} /><Muted>負責人固定：林峰</Muted></> : null}
-    {c === '賽季3x3' ? <><Segment label="3x3" options={['台服', '陸服', '部分/造型']} value={props.seasonMode} onChange={props.setSeasonMode} />{props.seasonMode === '部分/造型' ? <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="做哪個部分 / 造型" /> : null}<Muted>負責人固定：林峰</Muted></> : null}
-    {c === '調畫質' ? <Muted>固定 $520｜負責人：林峰｜派單不抽成。</Muted> : null}
-    {c === '代儲' ? <><Text style={styles.label}>代儲品項</Text><ScrollView style={styles.menuScroll} nestedScrollEnabled>{TOPUP_OPTIONS.map((option, index) => <Choice key={option.label} text={`${option.label}｜老闆 $${option.customer}｜${option.rmb} RMB`} onPress={() => props.setTopupIndex(index)} />)}<Choice text="其他 / 自訂代儲" accent onPress={() => props.setTopupIndex(null)} /></ScrollView>{props.topupIndex === null ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="自訂代儲內容" /><Field value={props.topupRmb} onChangeText={props.setTopupRmb} keyboardType="decimal-pad" placeholder="RMB 金額" /></> : null}<Segment label="負責充值" options={['小白', '莫北', 'BoBo']} value={props.responsible} onChange={props.setResponsible} /></> : null}
-    {c === '其他（訂製單）' ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="訂製內容" /><Segment label="需要打手嗎？" options={['不需要', '需要']} value={props.customNeedsPlayers ? '需要' : '不需要'} onChange={(value) => { props.setCustomNeedsPlayers(value === '需要'); props.setSlotCount(value === '需要' ? 1 : 0) }} /></> : null}
-    {c === '勇敢者' ? <Muted>固定 $3680｜2 位打手。</Muted> : null}
-  </View>
+
+  return (
+    <View style={{ gap: 10 }}>
+      {c === '小時單' ? (
+        <>
+          <Segment
+            label="單陪 / 雙陪"
+            options={['單陪', '雙陪']}
+            value={props.hourlyMode}
+            onChange={props.setHourlyMode}
+          />
+          <Segment
+            label={props.hourlyMode === '單陪' ? '小時單等級' : '第 1 個等級'}
+            options={RANKS}
+            value={props.hourlyRanks[0]}
+            onChange={(value) => props.setHourlyRank(0, value)}
+          />
+          {props.hourlyMode === '雙陪' ? (
+            <Segment
+              label="第 2 個等級"
+              options={RANKS}
+              value={props.hourlyRanks[1]}
+              onChange={(value) => props.setHourlyRank(1, value)}
+            />
+          ) : null}
+        </>
+      ) : null}
+
+      {['小時單', '保底單', '女陪單'].includes(c) ? (
+        <Segment
+          label="機密 / 絕密"
+          options={SECRECY}
+          value={props.secrecy}
+          onChange={props.setSecrecy}
+        />
+      ) : null}
+
+      {['小時單', '教學單', '女陪單'].includes(c) ? (
+        <>
+          <Text style={styles.label}>小時數</Text>
+          <Field
+            value={props.hours}
+            onChangeText={props.setHours}
+            keyboardType="decimal-pad"
+            placeholder="例如 2.5"
+          />
+        </>
+      ) : null}
+
+      {c === '保底單' ? (
+        <Segment
+          label="保底金額"
+          options={Object.keys(GUARANTEE_PRICE.機密)}
+          value={props.guaranteeTier}
+          onChange={props.setGuaranteeTier}
+        />
+      ) : null}
+
+      {c === '體驗單' ? (
+        <Segment
+          label="體驗方案"
+          options={['每日', '每週']}
+          value={props.trialPeriod}
+          onChange={props.setTrialPeriod}
+        />
+      ) : null}
+
+      {c === '女陪單' ? (
+        <>
+          <Segment
+            label="女陪類型"
+            options={['女+技術陪', '純女陪']}
+            value={props.femaleMode}
+            onChange={props.setFemaleMode}
+          />
+          {props.femaleMode === '女+技術陪' ? (
+            <Segment
+              label="技術陪等級"
+              options={RANKS}
+              value={props.femaleTechRank}
+              onChange={props.setFemaleTechRank}
+            />
+          ) : (
+            <Segment
+              label="單陪 / 雙陪"
+              options={['單陪', '雙陪']}
+              value={props.femalePureMode}
+              onChange={props.setFemalePureMode}
+            />
+          )}
+        </>
+      ) : null}
+
+      {c === '娛樂單' ? (
+        <>
+          <Segment
+            label="娛樂單種類"
+            options={ENTERTAINMENT_TYPES}
+            value={props.entertainmentType}
+            onChange={props.setEntertainmentType}
+          />
+          {props.entertainmentType !== '自訂' ? (
+            <Segment
+              label="方案"
+              options={props.entertainmentOptions.map((o: any) => o.label)}
+              value={props.entertainmentOption}
+              onChange={props.setEntertainmentOption}
+            />
+          ) : null}
+          {props.entertainmentType === '自訂' ? (
+            <>
+              <Text style={styles.label}>自訂內容</Text>
+              <Field
+                value={props.simpleDetail}
+                onChangeText={props.setSimpleDetail}
+                placeholder="自己填這張娛樂單要做什麼"
+              />
+              <Muted>自訂單沒有固定金額，總金額預設為 0，可在下方自行修改。</Muted>
+            </>
+          ) : props.entertainmentOptions.find((o: any) => o.label === props.entertainmentOption)?.price === 0 ? (
+            <Muted>此方案沒有固定金額，總金額預設為 0。</Muted>
+          ) : null}
+        </>
+      ) : null}
+
+      {c === '跑刀' ? (
+        <>
+          <Segment
+            label="跑刀"
+            options={['1000w', '5000w', '1e', '自訂']}
+            value={props.runTier}
+            onChange={props.setRunTier}
+          />
+          <Segment
+            label="負責人"
+            options={['華', '望舒', '睡', '其他']}
+            value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'}
+            onChange={(value) => props.setResponsible(value === '其他' ? '' : value)}
+          />
+          {!['華', '望舒', '睡'].includes(props.responsible) ? (
+            <Field
+              value={props.responsible}
+              onChangeText={props.setResponsible}
+              placeholder="其他負責人"
+            />
+          ) : null}
+        </>
+      ) : null}
+
+      {c === '撞車' ? (
+        <>
+          <Segment
+            label="撞車"
+            options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']}
+            value={props.collisionTier}
+            onChange={props.setCollisionTier}
+          />
+          <Field
+            value={props.responsible}
+            onChangeText={props.setResponsible}
+            placeholder="負責接的人"
+          />
+        </>
+      ) : null}
+
+      {['撞紅', '撞子彈', '代解任務'].includes(c) ? (
+        <>
+          <Field
+            value={props.simpleDetail}
+            onChangeText={props.setSimpleDetail}
+            placeholder={c === '撞紅' ? '填什麼紅' : c === '撞子彈' ? '填什麼子彈' : '填什麼任務'}
+          />
+          <Field
+            value={props.responsible}
+            onChangeText={props.setResponsible}
+            placeholder="負責接的人"
+          />
+        </>
+      ) : null}
+
+      {c === '實名' ? (
+        <>
+          <Segment
+            label="實名類型"
+            options={['實名', '強改綁']}
+            value={props.identityMode}
+            onChange={props.setIdentityMode}
+          />
+          <Muted>負責人固定：林峰</Muted>
+        </>
+      ) : null}
+
+      {c === '賽季3x3' ? (
+        <>
+          <Segment
+            label="3x3"
+            options={['台服', '陸服', '部分/造型']}
+            value={props.seasonMode}
+            onChange={props.setSeasonMode}
+          />
+          {props.seasonMode === '部分/造型' ? (
+            <Field
+              value={props.simpleDetail}
+              onChangeText={props.setSimpleDetail}
+              placeholder="做哪個部分 / 造型"
+            />
+          ) : null}
+          <Muted>負責人固定：林峰</Muted>
+        </>
+      ) : null}
+
+      {c === '調畫質' ? (
+        <Muted>固定 $520｜負責人：林峰｜派單不抽成。</Muted>
+      ) : null}
+
+      {c === '代儲' ? (
+        <>
+          <Text style={styles.label}>代儲品項</Text>
+          <ScrollView style={styles.menuScroll} nestedScrollEnabled>
+            {TOPUP_OPTIONS.map((option, index) => (
+              <Choice
+                key={option.label}
+                text={`${option.label}｜老闆 $${option.customer}｜${option.rmb} RMB`}
+                onPress={() => props.setTopupIndex(index)}
+              />
+            ))}
+            <Choice
+              text="其他 / 自訂代儲"
+              accent
+              onPress={() => props.setTopupIndex(null)}
+            />
+          </ScrollView>
+          {props.topupIndex === null ? (
+            <>
+              <Field
+                value={props.simpleDetail}
+                onChangeText={props.setSimpleDetail}
+                placeholder="自訂代儲內容"
+              />
+              <Field
+                value={props.topupRmb}
+                onChangeText={props.setTopupRmb}
+                keyboardType="decimal-pad"
+                placeholder="RMB 金額"
+              />
+            </>
+          ) : null}
+          <Segment
+            label="負責充值"
+            options={['小白', '莫北', 'BoBo']}
+            value={props.responsible}
+            onChange={props.setResponsible}
+          />
+        </>
+      ) : null}
+
+      {c === '勇敢者' ? <Muted>固定 $3680｜2 位打手。</Muted> : null}
+    </View>
+  )
 }
 
-function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd }: any) {
+function SearchPicker({
+  label,
+  selectedLabel,
+  open,
+  onToggle,
+  query,
+  setQuery,
+  items,
+  onSelect,
+  addLabel,
+  onAdd
+}: any) {
   const q = query.trim().toLowerCase()
   const filtered = items.filter((item: SearchItem) => !q || (item.searchText ?? item.label).toLowerCase().includes(q))
-  return <Dropdown label={label} value={selectedLabel} open={open} onToggle={onToggle}><View style={{ gap: 8, paddingTop: 8 }}><Field value={query} onChangeText={setQuery} placeholder={`搜尋${label}`} /><ScrollView style={styles.searchResults} nestedScrollEnabled keyboardShouldPersistTaps="handled">{filtered.map((item: SearchItem) => <Choice key={item.id} text={item.label} onPress={() => onSelect(item)} />)}{filtered.length === 0 ? <Text style={styles.emptyText}>找不到符合資料</Text> : null}</ScrollView><Choice text={addLabel} onPress={onAdd} accent /></View></Dropdown>
+
+  return (
+    <Dropdown label={label} value={selectedLabel} open={open} onToggle={onToggle}>
+      <View style={{ gap: 8, paddingTop: 8 }}>
+        <Field value={query} onChangeText={setQuery} placeholder={`搜尋${label}`} />
+        <ScrollView
+          style={styles.searchResults}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
+          {filtered.map((item: SearchItem) => (
+            <Choice key={item.id} text={item.label} onPress={() => onSelect(item)} />
+          ))}
+          {filtered.length === 0 ? <Text style={styles.emptyText}>找不到符合資料</Text> : null}
+        </ScrollView>
+        <Choice text={addLabel} onPress={onAdd} accent />
+      </View>
+    </Dropdown>
+  )
 }
 
 function Dropdown({ label, value, open, onToggle, children }: any) {
-  return <View style={{ gap: 7 }}><Text style={styles.label}>{label}</Text><Pressable style={styles.selectButton} onPress={onToggle}><Text style={styles.selectText}>{value}</Text><Text style={styles.chevron}>{open ? '▲' : '▼'}</Text></Pressable>{open ? <View style={styles.menu}>{children}</View> : null}</View>
+  return (
+    <View style={{ gap: 7 }}>
+      <Text style={styles.label}>{label}</Text>
+      <Pressable style={styles.selectButton} onPress={onToggle}>
+        <Text style={styles.selectText}>{value}</Text>
+        <Text style={styles.chevron}>{open ? '▲' : '▼'}</Text>
+      </Pressable>
+      {open ? <View style={styles.menu}>{children}</View> : null}
+    </View>
+  )
 }
 
-function Choice({ text, onPress, accent = false }: { text: string; onPress: () => void; accent?: boolean }) {
-  return <Pressable style={styles.choice} onPress={onPress}><Text style={[styles.choiceText, accent && { color: colors.accent }]}>{text}</Text></Pressable>
+function Choice({
+  text,
+  onPress,
+  accent = false
+}: {
+  text: string
+  onPress: () => void
+  accent?: boolean
+}) {
+  return (
+    <Pressable style={styles.choice} onPress={onPress}>
+      <Text style={[styles.choiceText, accent && { color: colors.accent }]}>{text}</Text>
+    </Pressable>
+  )
 }
 
-function Segment({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string; onChange: (value: string) => void }) {
-  return <View style={{ gap: 7 }}><Text style={styles.label}>{label}</Text><View style={styles.segment}>{options.map((option) => <Pressable key={option} onPress={() => onChange(option)} style={[styles.segmentItem, value === option && styles.segmentActive]}><Text style={[styles.segmentText, value === option && styles.segmentTextActive]}>{option}</Text></Pressable>)}</View></View>
+function Segment({
+  label,
+  options,
+  value,
+  onChange
+}: {
+  label: string
+  options: readonly string[]
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <View style={{ gap: 7 }}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.segment}>
+        {options.map((option) => (
+          <Pressable
+            key={option}
+            onPress={() => onChange(option)}
+            style={[styles.segmentItem, value === option && styles.segmentActive]}
+          >
+            <Text style={[styles.segmentText, value === option && styles.segmentTextActive]}>{option}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  )
 }
 
 const styles = StyleSheet.create({
   label: { color: colors.text, fontWeight: '700', fontSize: 14 },
-  selectButton: { minHeight: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectButton: {
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel2,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
   selectText: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 },
   chevron: { color: colors.accent, fontWeight: '800' },
-  menu: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.panel2 },
+  menu: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: colors.panel2
+  },
   menuScroll: { maxHeight: 235 },
   searchResults: { maxHeight: 235 },
-  choice: { minHeight: 46, justifyContent: 'center', paddingVertical: 11, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  choice: {
+    minHeight: 46,
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border
+  },
   choiceText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   emptyText: { color: colors.muted, padding: 14 },
   inline: { gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.panel2 },
   segment: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  segmentItem: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2 },
+  segmentItem: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel2
+  },
   segmentActive: { borderColor: colors.accent, backgroundColor: colors.accent },
   segmentText: { color: colors.text, fontWeight: '700' },
   segmentTextActive: { color: '#051018' },
-  playerBox: { gap: 9, paddingBottom: 14, borderBottomColor: colors.border, borderBottomWidth: 1 },
-  summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  playerBox: {
+    gap: 9,
+    paddingBottom: 14,
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10
+  },
   link: { color: colors.accent, fontWeight: '800' },
   money: { color: colors.accent, fontSize: 20, fontWeight: '800' }
 })
