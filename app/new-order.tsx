@@ -2,64 +2,103 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
+import {
+  COLLISION_PRICE,
+  GUARANTEE_PRICE,
+  HOURLY_PRICE,
+  RUN_KNIFE_PRICE,
+  SERVICE_CATEGORIES,
+  TOPUP_OPTIONS,
+  ServiceCategory,
+  Rank,
+  Secrecy,
+  bravePricing,
+  ceilMoney,
+  defaultDispatchRate,
+  entertainmentPricing,
+  femalePurePricing,
+  femaleTechPricing,
+  guaranteePricing,
+  hourlyPricing,
+  shouldRequirePlayers,
+  teachingPricing,
+  trialPricing
+} from '@/lib/pricing'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
 
-type Customer = {
-  id: string
-  display_name: string
-  aliases: string[] | null
+type Customer = { id: string; display_name: string; aliases: string[] | null }
+type Player = { id: string; display_name: string }
+type Dispatcher = { id: string; display_name: string; role: string }
+type OrderType = { id: string; name: string; requires_player: boolean }
+type PlayerSlot = { playerId: string; playerName: string; rank: Rank; pay: string }
+
+const RANKS: Rank[] = ['B', 'A', 'S', 'SR']
+const SECRECY: Secrecy[] = ['機密', '絕密']
+const ENTERTAINMENT_PRESETS = ['賭紅單', '家豪單', '小小巨人單', '賭約單', '環遊航天', '其他']
+
+function todayLocal() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-type OrderType = {
-  id: string
-  name: string
-  requires_player: boolean
-  vip_eligible: boolean
+function blankSlot(rank: Rank = 'B'): PlayerSlot {
+  return { playerId: '', playerName: '', rank, pay: '' }
 }
-
-type Player = {
-  id: string
-  display_name: string
-}
-
-type SelectedPlayer = {
-  playerId: string
-  playerName: string
-  query: string
-  pay: string
-}
-
-const emptyPlayer = (): SelectedPlayer => ({
-  playerId: '',
-  playerName: '',
-  query: '',
-  pay: ''
-})
 
 export default function NewOrderScreen() {
   const { profile } = useAuth()
   const allowed = profile?.role === 'staff' || profile?.role === 'admin'
 
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [playersList, setPlayersList] = useState<Player[]>([])
+  const [dispatchers, setDispatchers] = useState<Dispatcher[]>([])
   const [orderTypes, setOrderTypes] = useState<OrderType[]>([])
-  const [allPlayers, setAllPlayers] = useState<Player[]>([])
-  const [loadingOptions, setLoadingOptions] = useState(true)
-
-  const [customerId, setCustomerId] = useState('')
-  const [customerQuery, setCustomerQuery] = useState('')
-  const [orderTypeId, setOrderTypeId] = useState('')
-  const [orderTypeQuery, setOrderTypeQuery] = useState('')
-  const [amount, setAmount] = useState('')
-  const [requiresPlayer, setRequiresPlayer] = useState(true)
-  const [vipEligible, setVipEligible] = useState(true)
-  const [players, setPlayers] = useState<SelectedPlayer[]>([emptyPlayer()])
+  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
+  const [category, setCategory] = useState<ServiceCategory>('小時單')
+  const [orderDate, setOrderDate] = useState(todayLocal())
+  const [customerId, setCustomerId] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [dispatcherId, setDispatcherId] = useState('')
+  const [dispatcherName, setDispatcherName] = useState('')
+  const [dispatcherRole, setDispatcherRole] = useState('')
+  const [dispatchPct, setDispatchPct] = useState('5')
+  const [amount, setAmount] = useState('')
+  const [systemAmount, setSystemAmount] = useState(0)
+  const [amountManual, setAmountManual] = useState(false)
+  const [slots, setSlots] = useState<PlayerSlot[]>([blankSlot()])
+
+  const [secrecy, setSecrecy] = useState<Secrecy>('機密')
+  const [hours, setHours] = useState('1')
+  const [guaranteeTier, setGuaranteeTier] = useState<'1000w' | '3000w' | '5000w'>('1000w')
+  const [trialPeriod, setTrialPeriod] = useState<'每日' | '每週'>('每日')
+  const [femaleMode, setFemaleMode] = useState<'女+技術陪' | '純女陪'>('女+技術陪')
+  const [femalePureMode, setFemalePureMode] = useState<'單陪' | '雙陪'>('單陪')
+  const [femaleTechRank, setFemaleTechRank] = useState<Rank>('B')
+  const [entertainmentName, setEntertainmentName] = useState('賭紅單')
+  const [runTier, setRunTier] = useState<'1000w' | '5000w' | '1e' | '自訂'>('1000w')
+  const [collisionTier, setCollisionTier] = useState<'1000w' | '1500w' | '3000w' | '5000w' | '1e' | '自訂'>('1000w')
+  const [simpleDetail, setSimpleDetail] = useState('')
+  const [identityMode, setIdentityMode] = useState<'實名' | '強改綁'>('實名')
+  const [seasonMode, setSeasonMode] = useState<'台服' | '陸服' | '部分/造型'>('台服')
+  const [topupIndex, setTopupIndex] = useState<number | null>(0)
+  const [topupRmb, setTopupRmb] = useState('6')
+  const [responsible, setResponsible] = useState('')
+  const [customNeedsPlayers, setCustomNeedsPlayers] = useState(false)
+
+  const [customerOpen, setCustomerOpen] = useState(false)
+  const [categoryOpen, setCategoryOpen] = useState(false)
+  const [dispatcherOpen, setDispatcherOpen] = useState(false)
+  const [playerOpen, setPlayerOpen] = useState<number | null>(null)
   const [showAddCustomer, setShowAddCustomer] = useState(false)
-  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomer, setNewCustomer] = useState('')
   const [showAddPlayer, setShowAddPlayer] = useState<number | null>(null)
-  const [newPlayerName, setNewPlayerName] = useState('')
+  const [newPlayer, setNewPlayer] = useState('')
 
   useEffect(() => {
     if (!allowed) return
@@ -67,417 +106,400 @@ export default function NewOrderScreen() {
   }, [allowed])
 
   async function loadOptions() {
-    setLoadingOptions(true)
-    const [customerResult, typeResult, playerResult] = await Promise.all([
-      supabase
-        .from('customers')
-        .select('id, display_name, aliases')
-        .eq('active', true)
-        .order('display_name'),
-      supabase
-        .from('order_types')
-        .select('id, name, requires_player, vip_eligible')
-        .eq('active', true)
-        .order('name'),
-      supabase
-        .from('players')
-        .select('id, display_name')
-        .eq('active', true)
-        .order('display_name')
+    setLoading(true)
+    const [c, p, d, t] = await Promise.all([
+      supabase.from('customers').select('id, display_name, aliases').eq('active', true).order('display_name'),
+      supabase.from('players').select('id, display_name').eq('active', true).order('display_name'),
+      supabase.from('profiles').select('id, display_name, role').eq('active', true).in('role', ['staff', 'admin']).order('display_name'),
+      supabase.from('order_types').select('id, name, requires_player').eq('active', true).order('name')
     ])
+    setLoading(false)
+    const error = c.error || p.error || d.error || t.error
+    if (error) return Alert.alert('讀取資料失敗', error.message)
+    setCustomers((c.data ?? []) as Customer[])
+    setPlayersList((p.data ?? []) as Player[])
+    setDispatchers((d.data ?? []) as Dispatcher[])
+    setOrderTypes((t.data ?? []) as OrderType[])
 
-    setLoadingOptions(false)
+    const me = (d.data ?? []).find((item: any) => item.id === profile?.id) as Dispatcher | undefined
+    if (me) chooseDispatcher(me)
+  }
 
-    const error = customerResult.error || typeResult.error || playerResult.error
-    if (error) {
-      Alert.alert('讀取資料失敗', error.message)
-      return
+  const requiresPlayers = category === '其他（訂製單）' ? customNeedsPlayers : shouldRequirePlayers(category)
+  const nominalRate = Math.max(0, Number(dispatchPct || 0) / 100)
+  const currentAmount = Math.max(0, Number(amount || 0))
+  const dispatchFee = ceilMoney(currentAmount * nominalRate)
+
+  useEffect(() => {
+    const defaultRate = dispatcherRole === 'admin' ? 0 : defaultDispatchRate(category)
+    setDispatchPct(String(defaultRate * 100))
+    setAmountManual(false)
+    resetCategoryDefaults(category)
+  }, [category])
+
+  useEffect(() => {
+    if (dispatcherRole === 'admin') setDispatchPct('0')
+  }, [dispatcherRole])
+
+  useEffect(() => {
+    recalculate()
+  }, [category, secrecy, hours, guaranteeTier, trialPeriod, femaleMode, femalePureMode, femaleTechRank, runTier, collisionTier, identityMode, seasonMode, topupIndex, slots.length, slots.map((s) => s.rank).join('|')])
+
+  function resetCategoryDefaults(next: ServiceCategory) {
+    setSimpleDetail('')
+    setResponsible(next === '實名' || next === '賽季3x3' || next === '調畫質' ? '林峰' : '')
+    setCustomNeedsPlayers(false)
+    if (next === '跑刀') setResponsible('華')
+    if (next === '代儲') setResponsible('小白')
+
+    if (next === '保底單' || next === '體驗單' || next === '勇敢者' || next === '娛樂單') {
+      setSlots([blankSlot(), blankSlot()])
+    } else if (next === '教學單') {
+      setSlots([blankSlot('A')])
+    } else if (next === '女陪單') {
+      setSlots([blankSlot(), blankSlot()])
+    } else if (next === '小時單') {
+      setSlots([blankSlot()])
+    } else {
+      setSlots([])
+    }
+  }
+
+  function recalculate(force = false) {
+    const h = Number(hours)
+    let total = 0
+    let pays: number[] = []
+
+    if (category === '小時單' && h > 0 && slots.length) {
+      const result = hourlyPricing(secrecy, h, slots.map((s) => s.rank))
+      total = result.total
+      pays = result.pays
+    } else if (category === '保底單') {
+      const result = guaranteePricing(secrecy, guaranteeTier)
+      total = result.total
+      pays = result.pays
+    } else if (category === '體驗單') {
+      const result = trialPricing(trialPeriod)
+      total = result.total
+      pays = result.pays
+    } else if (category === '教學單' && h > 0) {
+      const result = teachingPricing(h)
+      total = result.total
+      pays = result.pays
+    } else if (category === '勇敢者') {
+      const result = bravePricing()
+      total = result.total
+      pays = result.pays
+    } else if (category === '女陪單' && h > 0) {
+      const result = femaleMode === '女+技術陪'
+        ? femaleTechPricing(secrecy, femaleTechRank, h)
+        : femalePurePricing(secrecy, femalePureMode, h)
+      total = result.total
+      pays = result.pays
+    } else if (category === '娛樂單') {
+      const custom = Number(amount || 0)
+      if (custom > 0) pays = entertainmentPricing(custom).pays
+    } else if (category === '跑刀' && runTier !== '自訂') {
+      total = RUN_KNIFE_PRICE[runTier]
+    } else if (category === '撞車' && collisionTier !== '自訂') {
+      total = COLLISION_PRICE[collisionTier]
+    } else if (category === '實名') {
+      total = identityMode === '實名' ? 1100 : 1750
+    } else if (category === '賽季3x3' && seasonMode !== '部分/造型') {
+      total = seasonMode === '台服' ? 3500 : 3700
+    } else if (category === '調畫質') {
+      total = 520
+    } else if (category === '代儲' && topupIndex !== null) {
+      total = TOPUP_OPTIONS[topupIndex].customer
+      setTopupRmb(String(TOPUP_OPTIONS[topupIndex].rmb))
     }
 
-    setCustomers((customerResult.data ?? []) as Customer[])
-    setOrderTypes((typeResult.data ?? []) as OrderType[])
-    setAllPlayers((playerResult.data ?? []) as Player[])
+    setSystemAmount(total)
+    if ((!amountManual || force) && total > 0) setAmount(String(total))
+    if (pays.length) {
+      setSlots((current) => current.map((slot, index) => ({ ...slot, pay: String(pays[index] ?? 0) })))
+    }
   }
 
-  const customerMatches = useMemo(() => {
-    const q = customerQuery.trim().toLowerCase()
-    if (!q || customerId) return []
-    return customers
-      .filter((customer) => {
-        const names = [customer.display_name, ...(customer.aliases ?? [])]
-        return names.some((name) => name.toLowerCase().includes(q))
-      })
-      .slice(0, 8)
-  }, [customerQuery, customerId, customers])
-
-  const orderTypeMatches = useMemo(() => {
-    const q = orderTypeQuery.trim().toLowerCase()
-    if (!q || orderTypeId) return []
-    return orderTypes.filter((type) => type.name.toLowerCase().includes(q)).slice(0, 8)
-  }, [orderTypeQuery, orderTypeId, orderTypes])
-
-  function playerMatches(query: string, index: number) {
-    const q = query.trim().toLowerCase()
-    if (!q || players[index]?.playerId) return []
-    const alreadySelected = new Set(
-      players.filter((_, i) => i !== index).map((player) => player.playerId).filter(Boolean)
-    )
-    return allPlayers
-      .filter(
-        (player) =>
-          !alreadySelected.has(player.id) && player.display_name.toLowerCase().includes(q)
-      )
-      .slice(0, 8)
+  function chooseDispatcher(item: Dispatcher) {
+    setDispatcherId(item.id)
+    setDispatcherName(item.display_name)
+    setDispatcherRole(item.role)
+    setDispatcherOpen(false)
+    setDispatchPct(item.role === 'admin' ? '0' : String(defaultDispatchRate(category) * 100))
   }
 
-  function chooseCustomer(customer: Customer) {
-    setCustomerId(customer.id)
-    setCustomerQuery(customer.display_name)
-  }
-
-  function chooseOrderType(type: OrderType) {
-    setOrderTypeId(type.id)
-    setOrderTypeQuery(type.name)
-    setRequiresPlayer(type.requires_player)
-    setVipEligible(type.vip_eligible)
-    if (!type.requires_player) setPlayers([emptyPlayer()])
-  }
-
-  function choosePlayer(index: number, player: Player) {
-    setPlayers((current) =>
-      current.map((item, i) =>
-        i === index
-          ? { ...item, playerId: player.id, playerName: player.display_name, query: player.display_name }
-          : item
-      )
-    )
+  function setSlotCount(count: number) {
+    setSlots((current) => {
+      const copy = [...current]
+      while (copy.length < count) copy.push(blankSlot())
+      return copy.slice(0, count)
+    })
   }
 
   async function addCustomer() {
-    const name = newCustomerName.trim()
+    const name = newCustomer.trim()
     if (!name) return
-
-    const { data, error } = await supabase
-      .from('customers')
-      .insert({ display_name: name })
-      .select('id, display_name, aliases')
-      .single()
-
-    if (error || !data) {
-      Alert.alert('新增老闆失敗', error?.message ?? 'Unable to add customer')
-      return
-    }
-
-    const customer = data as Customer
-    setCustomers((current) => [...current, customer].sort((a, b) => a.display_name.localeCompare(b.display_name)))
-    chooseCustomer(customer)
-    setNewCustomerName('')
+    const { data, error } = await supabase.from('customers').insert({ display_name: name }).select('id, display_name, aliases').single()
+    if (error || !data) return Alert.alert('新增老闆失敗', error?.message ?? 'Unknown error')
+    const item = data as Customer
+    setCustomers((current) => [...current, item].sort((a, b) => a.display_name.localeCompare(b.display_name)))
+    setCustomerId(item.id)
+    setCustomerName(item.display_name)
+    setNewCustomer('')
     setShowAddCustomer(false)
   }
 
   async function addPlayer(index: number) {
-    const name = newPlayerName.trim()
+    const name = newPlayer.trim()
     if (!name) return
-
-    const { data, error } = await supabase
-      .from('players')
-      .insert({ display_name: name })
-      .select('id, display_name')
-      .single()
-
-    if (error || !data) {
-      Alert.alert('新增打手失敗', error?.message ?? 'Unable to add player')
-      return
-    }
-
-    const player = data as Player
-    setAllPlayers((current) => [...current, player].sort((a, b) => a.display_name.localeCompare(b.display_name)))
-    choosePlayer(index, player)
-    setNewPlayerName('')
+    const { data, error } = await supabase.from('players').insert({ display_name: name }).select('id, display_name').single()
+    if (error || !data) return Alert.alert('新增打手失敗', error?.message ?? 'Unknown error')
+    const item = data as Player
+    setPlayersList((current) => [...current, item].sort((a, b) => a.display_name.localeCompare(b.display_name)))
+    choosePlayer(index, item)
+    setNewPlayer('')
     setShowAddPlayer(null)
   }
 
+  function choosePlayer(index: number, player: Player) {
+    setSlots((current) => current.map((slot, i) => i === index ? { ...slot, playerId: player.id, playerName: player.display_name } : slot))
+    setPlayerOpen(null)
+  }
+
+  const detailSummary = useMemo(() => {
+    if (category === '小時單') return `${secrecy} · ${slots.map((s) => s.rank).join('+')} · ${hours} 小時${slots.length === 1 ? ' · 單陪×1.2' : ''}`
+    if (category === '保底單') return `${secrecy} · ${guaranteeTier}`
+    if (category === '體驗單') return trialPeriod
+    if (category === '教學單') return `${hours} 小時`
+    if (category === '女陪單') return femaleMode === '女+技術陪' ? `${secrecy} · 女+${femaleTechRank} · ${hours} 小時` : `${secrecy} · ${femalePureMode} · ${hours} 小時`
+    if (category === '娛樂單') return entertainmentName
+    if (category === '跑刀') return runTier
+    if (category === '撞車') return collisionTier
+    if (category === '實名') return identityMode
+    if (category === '賽季3x3') return seasonMode
+    if (category === '代儲') return topupIndex === null ? simpleDetail : TOPUP_OPTIONS[topupIndex].label
+    return simpleDetail
+  }, [category, secrecy, slots, hours, guaranteeTier, trialPeriod, femaleMode, femaleTechRank, femalePureMode, entertainmentName, runTier, collisionTier, identityMode, seasonMode, topupIndex, simpleDetail])
+
   async function submit() {
-    if (!allowed) return
+    if (!customerId) return Alert.alert('資料不足', '請選擇下單老闆。')
+    if (!orderDate.match(/^\d{4}-\d{2}-\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
+    if (!Number.isFinite(currentAmount) || currentAmount < 0) return Alert.alert('金額錯誤', '請輸入有效總金額。')
+    if (!dispatcherId && nominalRate > 0) return Alert.alert('資料不足', '有派單抽成時請選擇派單人。')
+    if (requiresPlayers && (!slots.length || slots.some((slot) => !slot.playerId))) return Alert.alert('資料不足', '請選擇所有打手。')
+    if (requiresPlayers && slots.some((slot) => !Number.isFinite(Number(slot.pay)) || Number(slot.pay) < 0)) return Alert.alert('實拿錯誤', '請確認每位打手實拿金額。')
 
-    const numericAmount = Number(amount)
-    if (!customerId || !orderTypeId || !amount.trim()) {
-      Alert.alert('資料不足', '請選擇老闆、單種並填寫訂單金額。')
-      return
-    }
-    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
-      Alert.alert('金額錯誤', '請輸入有效的訂單金額。')
-      return
-    }
+    const ids = slots.map((s) => s.playerId).filter(Boolean)
+    if (new Set(ids).size !== ids.length) return Alert.alert('打手重複', '同一張訂單不能重複選同一位打手。')
 
-    if (requiresPlayer) {
-      if (players.length === 0 || players.some((player) => !player.playerId)) {
-        Alert.alert('資料不足', '需要打手的訂單請先選擇所有打手。')
-        return
-      }
-      const ids = players.map((player) => player.playerId)
-      if (new Set(ids).size !== ids.length) {
-        Alert.alert('打手重複', '同一張訂單不能重複加入同一位打手。')
-        return
-      }
-      if (
-        players.some(
-          (player) => player.pay.trim() && (!Number.isFinite(Number(player.pay)) || Number(player.pay) < 0)
-        )
-      ) {
-        Alert.alert('分成錯誤', '請輸入有效的打手分成。')
-        return
-      }
-    }
+    const dbType = orderTypes.find((type) => type.requires_player === requiresPlayers)
+    if (!dbType) return Alert.alert('缺少單種設定', requiresPlayers ? '資料庫沒有「需要打手」的基礎單種。' : '資料庫沒有「直接報單」的基礎單種。')
+
+    const notes = JSON.stringify({
+      service_category: category,
+      detail: detailSummary,
+      responsible: responsible || null,
+      system_amount: systemAmount,
+      manual_amount: amountManual,
+      nominal_dispatch_rate: nominalRate,
+      nominal_dispatch_fee: dispatchFee,
+      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null
+    })
 
     setBusy(true)
+    const storedRate = currentAmount > 0 && dispatchFee > 0 ? dispatchFee / currentAmount : 0
+    const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
+    const vipEligible = category !== '代儲'
 
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        customer_id: customerId,
-        order_type_id: orderTypeId,
-        amount_paid: numericAmount,
-        vip_eligible_amount: vipEligible ? numericAmount : 0,
-        requires_player: requiresPlayer,
-        created_by: profile?.id,
-        status: requiresPlayer ? 'awaiting_player' : 'completed',
-        completed_at: requiresPlayer ? null : new Date().toISOString()
-      })
-      .select('id, order_no')
-      .single()
+    const { data: order, error } = await supabase.from('orders').insert({
+      customer_id: customerId,
+      order_type_id: dbType.id,
+      created_by: profile?.id,
+      dispatcher_id: dispatcherId || null,
+      amount_paid: ceilMoney(currentAmount),
+      vip_eligible_amount: vipEligible ? ceilMoney(currentAmount) : 0,
+      dispatch_rate: storedRate,
+      requires_player: requiresPlayers,
+      status: requiresPlayers ? 'awaiting_player' : 'completed',
+      completed_at: requiresPlayers ? null : createdAt,
+      created_at: createdAt,
+      notes
+    }).select('id, order_no').single()
 
-    if (orderError || !order) {
+    if (error || !order) {
       setBusy(false)
-      Alert.alert('報單失敗', orderError?.message ?? 'Unable to create order')
-      return
+      return Alert.alert('報單失敗', error?.message ?? 'Unknown error')
     }
 
-    if (requiresPlayer) {
-      const assignments = players.map((player) => ({
+    if (requiresPlayers) {
+      const rows = slots.map((slot) => ({
         order_id: order.id,
-        player_id: player.playerId,
-        assigned_pay: player.pay.trim() ? Number(player.pay) : 0,
-        status: 'assigned'
+        player_id: slot.playerId,
+        assigned_pay: ceilMoney(Number(slot.pay || 0)),
+        status: 'assigned',
+        notes: category === '小時單' ? `${slot.rank}級` : null
       }))
-
-      const { error: playerError } = await supabase.from('order_players').insert(assignments)
-      if (playerError) {
+      const { error: assignmentError } = await supabase.from('order_players').insert(rows)
+      if (assignmentError) {
         setBusy(false)
-        Alert.alert('訂單已建立，但打手指派失敗', `${order.order_no}\n${playerError.message}`)
-        return
+        return Alert.alert('訂單已建立，但派打手失敗', `${order.order_no}\n${assignmentError.message}`)
       }
     }
 
     setBusy(false)
-    Alert.alert('報單完成', order.order_no)
+    Alert.alert('報單完成', `${order.order_no}\n總金額 $${ceilMoney(currentAmount)}\n派單抽成 $${dispatchFee}`)
     setCustomerId('')
-    setCustomerQuery('')
-    setOrderTypeId('')
-    setOrderTypeQuery('')
-    setAmount('')
-    setRequiresPlayer(true)
-    setVipEligible(true)
-    setPlayers([emptyPlayer()])
+    setCustomerName('')
+    setAmountManual(false)
+    setOrderDate(todayLocal())
+    resetCategoryDefaults(category)
+    recalculate(true)
   }
 
   if (!allowed) {
-    return (
-      <Screen>
-        <H1>新增報單</H1>
-        <Card>
-          <H2>沒有權限</H2>
-          <Muted>只有客服與店長/Admin 可以建立訂單。</Muted>
-        </Card>
-      </Screen>
-    )
+    return <Screen><H1>新增報單</H1><Card><H2>沒有權限</H2><Muted>只有客服與店長/Admin 可以建立訂單。</Muted></Card></Screen>
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
       <Screen>
         <H1>新增報單</H1>
+        <Muted>{loading ? '正在讀取資料…' : '先選單種，系統會帶出價格與分成；特殊價格都可以直接修改。'}</Muted>
 
         <Card>
-          <H2>訂單資料</H2>
-          <Muted>{loadingOptions ? '正在讀取老闆、單種與打手…' : '直接搜尋名稱，不需要再輸入 UUID。'}</Muted>
-
-          <Text style={styles.label}>老闆</Text>
-          <Field
-            value={customerQuery}
-            onChangeText={(value) => {
-              setCustomerQuery(value)
-              setCustomerId('')
-            }}
-            placeholder="搜尋老闆名稱 / 別名"
+          <H2>1. 單種</H2>
+          <TapSelect label="選擇單種" value={category} open={categoryOpen} onToggle={() => setCategoryOpen(!categoryOpen)}>
+            {SERVICE_CATEGORIES.map((item) => <Choice key={item} text={item} onPress={() => { setCategory(item); setCategoryOpen(false) }} />)}
+          </TapSelect>
+          <CategoryFields
+            category={category}
+            secrecy={secrecy} setSecrecy={setSecrecy}
+            hours={hours} setHours={setHours}
+            slots={slots} setSlots={setSlots} setSlotCount={setSlotCount}
+            guaranteeTier={guaranteeTier} setGuaranteeTier={setGuaranteeTier}
+            trialPeriod={trialPeriod} setTrialPeriod={setTrialPeriod}
+            femaleMode={femaleMode} setFemaleMode={setFemaleMode}
+            femalePureMode={femalePureMode} setFemalePureMode={setFemalePureMode}
+            femaleTechRank={femaleTechRank} setFemaleTechRank={setFemaleTechRank}
+            entertainmentName={entertainmentName} setEntertainmentName={setEntertainmentName}
+            runTier={runTier} setRunTier={setRunTier}
+            collisionTier={collisionTier} setCollisionTier={setCollisionTier}
+            simpleDetail={simpleDetail} setSimpleDetail={setSimpleDetail}
+            identityMode={identityMode} setIdentityMode={setIdentityMode}
+            seasonMode={seasonMode} setSeasonMode={setSeasonMode}
+            topupIndex={topupIndex} setTopupIndex={setTopupIndex}
+            topupRmb={topupRmb} setTopupRmb={setTopupRmb}
+            responsible={responsible} setResponsible={setResponsible}
+            customNeedsPlayers={customNeedsPlayers} setCustomNeedsPlayers={setCustomNeedsPlayers}
           />
-          {customerMatches.map((customer) => (
-            <OptionRow key={customer.id} title={customer.display_name} onPress={() => chooseCustomer(customer)} />
-          ))}
-          {customerId ? <SelectedText text={`✓ 已選：${customerQuery}`} /> : null}
-
-          <Button title={showAddCustomer ? '取消新增老闆' : '＋ 新增老闆'} tone="neutral" onPress={() => setShowAddCustomer((value) => !value)} />
-          {showAddCustomer && (
-            <View style={styles.inlineBox}>
-              <Field value={newCustomerName} onChangeText={setNewCustomerName} placeholder="新老闆名稱" />
-              <Button title="建立並選擇" onPress={addCustomer} />
-            </View>
-          )}
-
-          <Text style={styles.label}>單種</Text>
-          <Field
-            value={orderTypeQuery}
-            onChangeText={(value) => {
-              setOrderTypeQuery(value)
-              setOrderTypeId('')
-            }}
-            placeholder="搜尋單種"
-          />
-          {orderTypeMatches.map((type) => (
-            <OptionRow
-              key={type.id}
-              title={type.name}
-              subtitle={type.requires_player ? '需要打手結單' : '直接報單'}
-              onPress={() => chooseOrderType(type)}
-            />
-          ))}
-          {orderTypeId ? (
-            <SelectedText text={`✓ ${orderTypeQuery} · ${requiresPlayer ? '需要打手' : '直接報單'}`} />
-          ) : null}
-
-          <Text style={styles.label}>訂單金額</Text>
-          <Field value={amount} onChangeText={setAmount} placeholder="例如 2400" keyboardType="numeric" />
         </Card>
 
-        {requiresPlayer && orderTypeId ? (
+        <Card>
+          <H2>2. 下單資料</H2>
+          <Text style={styles.label}>下單日期</Text>
+          <Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
+
+          <TapSelect label="下單老闆" value={customerName || '點這裡選擇老闆'} open={customerOpen} onToggle={() => setCustomerOpen(!customerOpen)}>
+            {customers.map((item) => <Choice key={item.id} text={item.display_name} onPress={() => { setCustomerId(item.id); setCustomerName(item.display_name); setCustomerOpen(false) }} />)}
+            <Choice text="＋ 名單沒有？新增老闆" onPress={() => { setCustomerOpen(false); setShowAddCustomer(true) }} accent />
+          </TapSelect>
+          {showAddCustomer ? <View style={styles.inline}><Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" /><Button title="新增並選擇" onPress={addCustomer} /><Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} /></View> : null}
+
+          <Text style={styles.label}>總金額</Text>
+          <Field value={amount} onChangeText={(value) => { setAmount(value); setAmountManual(true) }} keyboardType="decimal-pad" placeholder="總金額" />
+          <View style={styles.summaryRow}><Muted>系統價：${systemAmount}</Muted>{amountManual && systemAmount > 0 ? <Pressable onPress={() => { setAmountManual(false); setAmount(String(systemAmount)) }}><Text style={styles.link}>套用系統價</Text></Pressable> : null}</View>
+        </Card>
+
+        {requiresPlayers ? (
           <Card>
-            <H2>打手</H2>
-            <Muted>同一張訂單可以加入多位打手，但老闆消費只會計算一次。</Muted>
+            <H2>3. 打手與實拿</H2>
+            <Muted>系統先自動算實拿；特殊免單或特殊分成可以直接改金額。所有小數無條件進位。</Muted>
+            {slots.map((slot, index) => (
+              <View key={index} style={styles.playerBox}>
+                <TapSelect label={`打手 ${index + 1}`} value={slot.playerName || '點這裡選擇打手'} open={playerOpen === index} onToggle={() => setPlayerOpen(playerOpen === index ? null : index)}>
+                  {playersList.filter((p) => !slots.some((s, i) => i !== index && s.playerId === p.id)).map((p) => <Choice key={p.id} text={p.display_name} onPress={() => choosePlayer(index, p)} />)}
+                  <Choice text="＋ 名單沒有？新增打手" onPress={() => { setPlayerOpen(null); setShowAddPlayer(index) }} accent />
+                </TapSelect>
+                {showAddPlayer === index ? <View style={styles.inline}><Field value={newPlayer} onChangeText={setNewPlayer} placeholder="新打手名稱" /><Button title="新增並選擇" onPress={() => addPlayer(index)} /><Button title="取消" tone="neutral" onPress={() => setShowAddPlayer(null)} /></View> : null}
 
-            {players.map((player, index) => {
-              const matches = playerMatches(player.query, index)
-              return (
-                <View key={index} style={styles.playerBox}>
-                  <Text style={styles.label}>打手 {index + 1}</Text>
-                  <Field
-                    value={player.query}
-                    onChangeText={(value) =>
-                      setPlayers((current) =>
-                        current.map((item, i) =>
-                          i === index ? { ...item, query: value, playerId: '', playerName: '' } : item
-                        )
-                      )
-                    }
-                    placeholder="搜尋打手名稱"
-                  />
-                  {matches.map((match) => (
-                    <OptionRow key={match.id} title={match.display_name} onPress={() => choosePlayer(index, match)} />
-                  ))}
-                  {player.playerId ? <SelectedText text={`✓ 已選：${player.playerName}`} /> : null}
-
-                  <Field
-                    value={player.pay}
-                    onChangeText={(value) =>
-                      setPlayers((current) =>
-                        current.map((item, i) => (i === index ? { ...item, pay: value } : item))
-                      )
-                    }
-                    placeholder="預計分成（可先留 0）"
-                    keyboardType="numeric"
-                  />
-
-                  <Button
-                    title={showAddPlayer === index ? '取消新增打手' : '＋ 新增打手資料'}
-                    tone="neutral"
-                    onPress={() => {
-                      setShowAddPlayer(showAddPlayer === index ? null : index)
-                      setNewPlayerName('')
-                    }}
-                  />
-                  {showAddPlayer === index && (
-                    <View style={styles.inlineBox}>
-                      <Field value={newPlayerName} onChangeText={setNewPlayerName} placeholder="新打手名稱" />
-                      <Button title="建立並選擇" onPress={() => addPlayer(index)} />
-                    </View>
-                  )}
-
-                  {players.length > 1 && (
-                    <Button
-                      title="移除此打手"
-                      tone="danger"
-                      onPress={() => setPlayers((current) => current.filter((_, i) => i !== index))}
-                    />
-                  )}
-                </View>
-              )
-            })}
-
-            <Button title="＋ 再加一位打手" tone="neutral" onPress={() => setPlayers((current) => [...current, emptyPlayer()])} />
+                {category === '小時單' ? <Segment label="等級" options={RANKS} value={slot.rank} onChange={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, rank: value as Rank } : s))} /> : null}
+                <Text style={styles.label}>打手實拿金額</Text>
+                <Field value={slot.pay} onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, pay: value } : s))} keyboardType="decimal-pad" placeholder="實拿金額" />
+              </View>
+            ))}
+            {category === '小時單' ? <Button title="＋ 再加一位打手" tone="neutral" onPress={() => setSlots((current) => [...current, blankSlot()])} /> : null}
           </Card>
         ) : null}
 
-        {orderTypeId && !requiresPlayer ? (
-          <Card>
-            <H2>直接報單</H2>
-            <Muted>此單種不需要打手，送出後會直接完成並計入老闆消費。</Muted>
-          </Card>
-        ) : null}
+        <Card>
+          <H2>{requiresPlayers ? '4. 派單' : '3. 派單'}</H2>
+          <TapSelect label="派單人" value={dispatcherName || '點這裡選擇派單人'} open={dispatcherOpen} onToggle={() => setDispatcherOpen(!dispatcherOpen)}>
+            {dispatchers.map((item) => <Choice key={item.id} text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`} onPress={() => chooseDispatcher(item)} />)}
+            <Choice text="不指定派單人" onPress={() => { setDispatcherId(''); setDispatcherName(''); setDispatcherRole(''); setDispatcherOpen(false) }} />
+          </TapSelect>
+          <Text style={styles.label}>派單抽成 %</Text>
+          <Field value={dispatchPct} onChangeText={setDispatchPct} keyboardType="decimal-pad" placeholder="例如 5 / 3 / 2.5 / 0" />
+          <Text style={styles.money}>派單人實拿：${dispatchFee}</Text>
+          <Muted>一般 5%｜體驗單 2.5%｜撞子彈 3%｜店長/Admin、調畫質、代儲預設 0%。都可以手動修改。</Muted>
+        </Card>
 
-        <Button title={busy ? '送出中…' : '送出報單'} onPress={submit} disabled={busy || loadingOptions} />
+        <Button title={busy ? '送出中…' : '送出報單'} onPress={submit} disabled={busy || loading} />
       </Screen>
     </ScrollView>
   )
 }
 
-function OptionRow({ title, subtitle, onPress }: { title: string; subtitle?: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={styles.optionRow}>
-      <Text style={styles.optionTitle}>{title}</Text>
-      {subtitle ? <Text style={styles.optionSubtitle}>{subtitle}</Text> : null}
-    </Pressable>
-  )
+function TapSelect({ label, value, open, onToggle, children }: any) {
+  return <View style={styles.selectWrap}><Text style={styles.label}>{label}</Text><Pressable style={styles.selectButton} onPress={onToggle}><Text style={styles.selectText}>{value}</Text><Text style={styles.chevron}>{open ? '▲' : '▼'}</Text></Pressable>{open ? <View style={styles.menu}>{children}</View> : null}</View>
 }
 
-function SelectedText({ text }: { text: string }) {
-  return <Text style={styles.selected}>{text}</Text>
+function Choice({ text, onPress, accent = false }: { text: string; onPress: () => void; accent?: boolean }) {
+  return <Pressable style={styles.choice} onPress={onPress}><Text style={[styles.choiceText, accent && { color: colors.accent }]}>{text}</Text></Pressable>
+}
+
+function Segment({ label, options, value, onChange }: { label: string; options: readonly string[]; value: string; onChange: (value: string) => void }) {
+  return <View style={{ gap: 7 }}><Text style={styles.label}>{label}</Text><View style={styles.segment}>{options.map((option) => <Pressable key={option} onPress={() => onChange(option)} style={[styles.segmentItem, value === option && styles.segmentActive]}><Text style={[styles.segmentText, value === option && styles.segmentTextActive]}>{option}</Text></Pressable>)}</View></View>
+}
+
+function CategoryFields(props: any) {
+  const c: ServiceCategory = props.category
+  return <View style={{ gap: 10 }}>
+    {['小時單', '保底單', '女陪單'].includes(c) ? <Segment label="機密 / 絕密" options={SECRECY} value={props.secrecy} onChange={props.setSecrecy} /> : null}
+    {['小時單', '教學單', '女陪單'].includes(c) ? <><Text style={styles.label}>小時數</Text><Field value={props.hours} onChangeText={props.setHours} keyboardType="decimal-pad" placeholder="例如 2.5" /></> : null}
+    {c === '保底單' ? <Segment label="保底金額" options={Object.keys(GUARANTEE_PRICE.機密)} value={props.guaranteeTier} onChange={props.setGuaranteeTier} /> : null}
+    {c === '體驗單' ? <Segment label="體驗方案" options={['每日', '每週']} value={props.trialPeriod} onChange={props.setTrialPeriod} /> : null}
+    {c === '女陪單' ? <><Segment label="女陪類型" options={['女+技術陪', '純女陪']} value={props.femaleMode} onChange={(v) => { props.setFemaleMode(v); if (v === '女+技術陪') props.setSlotCount(2); else props.setSlotCount(props.femalePureMode === '單陪' ? 1 : 2) }} />{props.femaleMode === '女+技術陪' ? <Segment label="技術陪等級" options={RANKS} value={props.femaleTechRank} onChange={props.setFemaleTechRank} /> : <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.femalePureMode} onChange={(v) => { props.setFemalePureMode(v); props.setSlotCount(v === '單陪' ? 1 : 2) }} />}</> : null}
+    {c === '娛樂單' ? <><Segment label="娛樂單" options={ENTERTAINMENT_PRESETS} value={props.entertainmentName} onChange={props.setEntertainmentName} />{props.entertainmentName === '其他' ? <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="娛樂單名稱" /> : null}<Muted>娛樂單種類會一直增加，所以這裡不把全部價格寫死；選名稱後直接填總金額，兩位打手預設各拿「總金額 ÷ 2 × 80%」。</Muted></> : null}
+    {c === '跑刀' ? <><Segment label="跑刀" options={['1000w', '5000w', '1e', '自訂']} value={props.runTier} onChange={props.setRunTier} /><Segment label="負責人" options={['華', '望舒', '睡', '其他']} value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'} onChange={(v) => props.setResponsible(v === '其他' ? '' : v)} />{!['華', '望舒', '睡'].includes(props.responsible) ? <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="其他負責人" /> : null}</> : null}
+    {c === '撞車' ? <><Segment label="撞車" options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']} value={props.collisionTier} onChange={props.setCollisionTier} /><Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" /></> : null}
+    {['撞紅', '撞子彈', '代解任務'].includes(c) ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder={c === '撞紅' ? '填什麼紅' : c === '撞子彈' ? '填什麼子彈' : '填什麼任務'} /><Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" /></> : null}
+    {c === '實名' ? <><Segment label="實名類型" options={['實名', '強改綁']} value={props.identityMode} onChange={props.setIdentityMode} /><Muted>負責人固定：林峰</Muted></> : null}
+    {c === '賽季3x3' ? <><Segment label="3x3" options={['台服', '陸服', '部分/造型']} value={props.seasonMode} onChange={props.setSeasonMode} />{props.seasonMode === '部分/造型' ? <Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="做哪個部分 / 造型" /> : null}<Muted>負責人固定：林峰</Muted></> : null}
+    {c === '調畫質' ? <Muted>固定 $520｜負責人：林峰｜派單不抽成。</Muted> : null}
+    {c === '代儲' ? <><Text style={styles.label}>代儲品項</Text>{TOPUP_OPTIONS.map((option, index) => <Choice key={option.label} text={`${option.label}｜老闆 $${option.customer}｜代儲 ${option.rmb} RMB`} onPress={() => props.setTopupIndex(index)} />)}<Choice text="其他 / 自訂代儲" accent onPress={() => props.setTopupIndex(null)} />{props.topupIndex === null ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="自訂代儲內容" /><Text style={styles.label}>代儲 RMB</Text><Field value={props.topupRmb} onChangeText={props.setTopupRmb} keyboardType="decimal-pad" placeholder="RMB 金額" /></> : null}<Segment label="負責充值" options={['小白', '莫北', 'BoBo']} value={props.responsible} onChange={props.setResponsible} /><Muted>代儲不算老闆累積消費，也沒有派單抽成；RMB 金額會保留在報單明細。</Muted></> : null}
+    {c === '其他（訂製單）' ? <><Field value={props.simpleDetail} onChangeText={props.setSimpleDetail} placeholder="訂製內容" /><Segment label="需要打手嗎？" options={['不需要', '需要']} value={props.customNeedsPlayers ? '需要' : '不需要'} onChange={(v) => { props.setCustomNeedsPlayers(v === '需要'); props.setSlotCount(v === '需要' ? 1 : 0) }} />{!props.customNeedsPlayers ? <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責人（可留空）" /> : null}</> : null}
+    {c === '勇敢者' ? <Muted>固定 $3680｜2 位打手｜每位預設 3680 ÷ 2 × 80%。</Muted> : null}
+  </View>
 }
 
 const styles = StyleSheet.create({
-  playerBox: {
-    gap: 8,
-    paddingBottom: 16,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1
-  },
-  inlineBox: {
-    gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: colors.panel2
-  },
-  label: {
-    color: colors.text,
-    fontWeight: '700'
-  },
-  optionRow: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel2,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 3
-  },
-  optionTitle: {
-    color: colors.text,
-    fontWeight: '700'
-  },
-  optionSubtitle: {
-    color: colors.muted,
-    fontSize: 13
-  },
-  selected: {
-    color: colors.success,
-    fontWeight: '700'
-  }
+  label: { color: colors.text, fontWeight: '700', fontSize: 14 },
+  selectWrap: { gap: 7 },
+  selectButton: { minHeight: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectText: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 },
+  chevron: { color: colors.accent, fontWeight: '800' },
+  menu: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.panel2 },
+  choice: { paddingVertical: 13, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  choiceText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  inline: { gap: 8, padding: 10, borderRadius: 12, backgroundColor: colors.panel2 },
+  segment: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  segmentItem: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2 },
+  segmentActive: { borderColor: colors.accent, backgroundColor: colors.accent },
+  segmentText: { color: colors.text, fontWeight: '700' },
+  segmentTextActive: { color: '#051018' },
+  playerBox: { gap: 9, paddingBottom: 14, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
+  money: { color: colors.accent, fontSize: 22, fontWeight: '900' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  link: { color: colors.accent, fontWeight: '800' }
 })
