@@ -112,7 +112,7 @@ export default function SettlementScreen() {
         <Card>
           <H2>本期：{dateLabel(period.start)} → {dateLabel(period.end)}</H2>
           <Text style={styles.payout}>結算日：{dateLabel(period.payout)}</Text>
-          <Muted>固定每月 1 號與 15 號結算。點打手卡片會進入另一個頁面查看這一期的每一筆明細。</Muted>
+          <Muted>固定每月 1 號與 15 號結算。</Muted>
         </Card>
 
         {error ? <Card><Text style={styles.error}>讀取結算資料失敗：{error}</Text></Card> : null}
@@ -130,7 +130,6 @@ export default function SettlementScreen() {
               <Line label="其他加扣" value={summary.adjustments} signed />
               <View style={styles.divider} />
               <Line label="本期應付" value={summary.total} total />
-              <Text style={styles.tapHint}>點擊查看每一筆明細</Text>
             </Card>
           </TouchableOpacity>
         ))}
@@ -148,7 +147,6 @@ const styles = StyleSheet.create({
   payout: { color: colors.accent, fontWeight: '800', fontSize: 18 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   chevron: { color: colors.accent, fontWeight: '900', fontSize: 28 },
-  tapHint: { color: colors.accent, textAlign: 'center', marginTop: 8, fontWeight: '700', fontSize: 13 },
   line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   label: { color: colors.muted, fontSize: 15 },
   value: { color: colors.text, fontWeight: '700', fontSize: 16 },
