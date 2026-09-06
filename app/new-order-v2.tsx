@@ -91,7 +91,7 @@ export default function NewOrderV2Screen() {
   const [selfOrderOpen, setSelfOrderOpen] = useState(false)
   const [selfOrderQuery, setSelfOrderQuery] = useState('')
   const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')
-  const [customerDiscount, setCustomerDiscount] = useState<'無折扣' | '9折' | '85折' | '自訂'>('無折扣')
+  const [customerDiscount, setCustomerDiscount] = useState<'無折扣' | '95折' | '9折' | '85折' | '8折' | '自訂'>('無折扣')
   const [customDiscountPct, setCustomDiscountPct] = useState('90')
   const [playerAbsorbsDiscount, setPlayerAbsorbsDiscount] = useState(false)
   const [originalSystemAmount, setOriginalSystemAmount] = useState(0)
@@ -154,7 +154,7 @@ export default function NewOrderV2Screen() {
   const nominalRate = Math.max(0, Number(dispatchPct || 0) / 100)
   const currentAmount = Math.max(0, Number(amount || 0))
   const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)
-  const customerDiscountRate = customerDiscount === '9折' ? 0.9 : customerDiscount === '85折' ? 0.85 : customerDiscount === '自訂' ? Math.max(0, Math.min(1, Number(customDiscountPct || 100) / 100)) : 1
+  const customerDiscountRate = customerDiscount === '95折' ? 0.95 : customerDiscount === '9折' ? 0.9 : customerDiscount === '85折' ? 0.85 : customerDiscount === '8折' ? 0.8 : customerDiscount === '自訂' ? Math.max(0, Math.min(1, Number(customDiscountPct || 100) / 100)) : 1
   const dispatchFee = ceilMoney(currentAmount * nominalRate)
   const entertainmentOptions = ENTERTAINMENT_OPTIONS[entertainmentType] as readonly { label: string; price: number }[]
   const dispatchPresetValue = DISPATCH_PRESETS.includes(dispatchPct as (typeof DISPATCH_PRESETS)[number])
@@ -771,10 +771,10 @@ export default function NewOrderV2Screen() {
 
               <Segment
                 label="老闆折扣"
-                options={['無折扣', '9折', '85折', '自訂']}
+                options={['無折扣', '95折', '9折', '85折', '8折', '自訂']}
                 value={customerDiscount}
                 onChange={(value) => {
-                  setCustomerDiscount(value as '無折扣' | '9折' | '85折' | '自訂')
+                  setCustomerDiscount(value as '無折扣' | '95折' | '9折' | '85折' | '8折' | '自訂')
                   setAmountManual(false)
                   if (value === '無折扣') setPlayerAbsorbsDiscount(false)
                 }}
