@@ -1,0 +1,111 @@
+name: Add self-order flow
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/add-self-order.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch new order form
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/new-order-v2.tsx')
+          s = p.read_text()
+          s = s.replace("  const [amountManual, setAmountManual] = useState(false)\n", "  const [amountManual, setAmountManual] = useState(false)\n  const [selfOrder, setSelfOrder] = useState(false)\n  const [selfOrderPlayerId, setSelfOrderPlayerId] = useState('')\n  const [selfOrderPlayerName, setSelfOrderPlayerName] = useState('')\n  const [selfOrderOpen, setSelfOrderOpen] = useState(false)\n  const [selfOrderQuery, setSelfOrderQuery] = useState('')\n  const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')\n")
+          s = s.replace("  const currentAmount = Math.max(0, Number(amount || 0))\n", "  const currentAmount = Math.max(0, Number(amount || 0))\n  const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)\n")
+          s = s.replace("    setSystemAmount(total)\n    if (!amountManual || force) setAmount(String(total))\n", "    const normalTotal = total\n    if (selfOrder && selfDiscountAllowed) total = ceilMoney(normalTotal * 0.9)\n    setSystemAmount(total)\n    if (!amountManual || force) setAmount(String(total))\n")
+          s = s.replace("    topupIndex,\n    amountManual\n", "    topupIndex,\n    amountManual,\n    selfOrder\n")
+          old = """    const notes = JSON.stringify({
+      service_group: serviceGroup,"""
+          new = """    if (selfOrder && !selfOrderPlayerId) return Alert.alert('資料不足', '打手自己下單時，請選擇是哪位打手。')
+
+    const notes = JSON.stringify({
+      service_group: serviceGroup,"""
+          s = s.replace(old, new)
+          s = s.replace("      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null\n", "      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null,\n      self_order: selfOrder,\n      self_order_player_id: selfOrder ? selfOrderPlayerId : null,\n      self_order_player_name: selfOrder ? selfOrderPlayerName : null,\n      self_order_discount: selfOrder && selfDiscountAllowed ? 0.1 : 0,\n      self_payment: selfOrder ? selfPayment : null\n")
+          marker = """    if (requiresPlayers) {
+      const { error: assignmentError } = await supabase.from('order_players').insert("""
+          # ledger is inserted after assignments, before success
+          insert_before = """    if (selfOrder && selfPayment === '薪資扣款') {
+      const { error: ledgerError } = await supabase.from('ledger').insert({
+        player_id: selfOrderPlayerId,
+        order_id: order.id,
+        type: 'other',
+        amount: -ceilMoney(currentAmount),
+        description: `自己下單薪資扣款｜${category}｜${detailSummary}`,
+        created_by: profile?.id,
+        occurred_at: createdAt
+      })
+      if (ledgerError) {
+        setBusy(false)
+        return Alert.alert('訂單已建立，但薪資扣款紀錄失敗', ledgerError.message)
+      }
+    }
+
+"""
+          success = """    setBusy(false)
+    Alert.alert('報單完成'"""
+          s = s.replace(success, insert_before + success)
+          s = s.replace("    setAmountManual(false)\n    setOrderDate(todayLocal())\n", "    setAmountManual(false)\n    setSelfOrder(false)\n    setSelfOrderPlayerId('')\n    setSelfOrderPlayerName('')\n    setSelfPayment('直接付款')\n    setOrderDate(todayLocal())\n")
+          anchor = """          <Text style={styles.label}>總金額</Text>
+          <Field"""
+          ui = """          <Segment
+            label="下單身份"
+            options={['一般老闆', '打手自己下單']}
+            value={selfOrder ? '打手自己下單' : '一般老闆'}
+            onChange={(value) => {
+              const enabled = value === '打手自己下單'
+              setSelfOrder(enabled)
+              if (!enabled) {
+                setSelfOrderPlayerId('')
+                setSelfOrderPlayerName('')
+                setSelfPayment('直接付款')
+              }
+              setAmountManual(false)
+            }}
+          />
+
+          {selfOrder ? (
+            <>
+              <SearchPicker
+                label="下單打手"
+                selectedLabel={selfOrderPlayerName || '點這裡選擇打手'}
+                open={selfOrderOpen}
+                onToggle={() => setSelfOrderOpen(!selfOrderOpen)}
+                query={selfOrderQuery}
+                setQuery={setSelfOrderQuery}
+                items={playersList.map((player) => ({ id: player.id, label: player.display_name }))}
+                onSelect={(item: SearchItem) => {
+                  setSelfOrderPlayerId(item.id)
+                  setSelfOrderPlayerName(item.label)
+                  setSelfOrderQuery('')
+                  setSelfOrderOpen(false)
+                }}
+                addLabel=""
+                onAdd={() => {}}
+                hideAdd
+              />
+              <Segment label="付款方式" options={['直接付款', '薪資扣款']} value={selfPayment} onChange={(value) => setSelfPayment(value as '直接付款' | '薪資扣款')} />
+              <Muted>{selfDiscountAllowed ? '打手自己下單自動 9 折。' : `${category} 不享打手自下單 9 折。`}</Muted>
+            </>
+          ) : null}
+
+          <Text style={styles.label}>總金額</Text>
+          <Field"""
+          s = s.replace(anchor, ui)
+          s = s.replace("function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd }: any)", "function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd, hideAdd = false }: any)")
+          s = s.replace("        <Choice text={addLabel} onPress={onAdd} accent />", "        {!hideAdd ? <Choice text={addLabel} onPress={onAdd} accent /> : null}")
+          p.write_text(s)
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/new-order-v2.tsx
+          git commit -m "Add player self-order discount and salary deduction" || exit 0
+          git push
