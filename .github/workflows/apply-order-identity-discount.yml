@@ -1,0 +1,22 @@
+name: Apply order identity discount
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply-order-identity-discount.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: python scripts/refine_order_identity_discount.py
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/new-order-v2.tsx
+          git commit -m "Refine order identity and discount handling" || exit 0
+          git push
