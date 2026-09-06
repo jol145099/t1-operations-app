@@ -91,6 +91,10 @@ export default function NewOrderV2Screen() {
   const [selfOrderOpen, setSelfOrderOpen] = useState(false)
   const [selfOrderQuery, setSelfOrderQuery] = useState('')
   const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')
+  const [customerDiscount, setCustomerDiscount] = useState<'無折扣' | '9折' | '85折' | '自訂'>('無折扣')
+  const [customDiscountPct, setCustomDiscountPct] = useState('90')
+  const [playerAbsorbsDiscount, setPlayerAbsorbsDiscount] = useState(false)
+  const [originalSystemAmount, setOriginalSystemAmount] = useState(0)
 
   const [secrecy, setSecrecy] = useState<Secrecy>('機密')
   const [hours, setHours] = useState('1')
@@ -150,6 +154,7 @@ export default function NewOrderV2Screen() {
   const nominalRate = Math.max(0, Number(dispatchPct || 0) / 100)
   const currentAmount = Math.max(0, Number(amount || 0))
   const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)
+  const customerDiscountRate = customerDiscount === '9折' ? 0.9 : customerDiscount === '85折' ? 0.85 : customerDiscount === '自訂' ? Math.max(0, Math.min(1, Number(customDiscountPct || 100) / 100)) : 1
   const dispatchFee = ceilMoney(currentAmount * nominalRate)
   const entertainmentOptions = ENTERTAINMENT_OPTIONS[entertainmentType] as readonly { label: string; price: number }[]
   const dispatchPresetValue = DISPATCH_PRESETS.includes(dispatchPct as (typeof DISPATCH_PRESETS)[number])
@@ -183,7 +188,10 @@ export default function NewOrderV2Screen() {
     seasonMode,
     topupIndex,
     amountManual,
-    selfOrder
+    selfOrder,
+    customerDiscount,
+    customDiscountPct,
+    playerAbsorbsDiscount
   ])
 
   function resetCategory(next: ServiceCategory) {
@@ -318,7 +326,18 @@ export default function NewOrderV2Screen() {
       setTopupRmb(String(TOPUP_OPTIONS[topupIndex].rmb))
     }
 
-    if (selfOrder && selfDiscountAllowed) total = ceilMoney(total * 0.9)
+    const baseTotal = total
+    setOriginalSystemAmount(baseTotal)
+
+    if (selfOrder && selfDiscountAllowed) {
+      total = ceilMoney(baseTotal * 0.9)
+    } else if (!selfOrder && customerDiscountRate < 1) {
+      total = ceilMoney(baseTotal * customerDiscountRate)
+      if (playerAbsorbsDiscount && pays.length) {
+        pays = pays.map((pay) => ceilMoney(pay * customerDiscountRate))
+      }
+    }
+
     setSystemAmount(total)
     if (!amountManual || force) setAmount(String(total))
     if (pays.length) {
@@ -452,7 +471,7 @@ export default function NewOrderV2Screen() {
 
   async function submit() {
     if (selfOrder && !selfOrderPlayerId) return Alert.alert('資料不足', '打手自己下單時，請選擇是哪位打手。')
-    if (!customerId) return Alert.alert('資料不足', '請選擇下單老闆。')
+    if (!selfOrder && !customerId) return Alert.alert('資料不足', '一般老闆下單時，請選擇下單老闆。')
     if (!orderDate.match(/^\d{4}-\d{2}-\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
     if (!dispatcherId && nominalRate > 0) return Alert.alert('資料不足', '有派單抽成時請選擇派單人。')
     if (category === '娛樂單' && entertainmentType === '自訂' && !simpleDetail.trim()) {
@@ -482,15 +501,45 @@ export default function NewOrderV2Screen() {
       self_order_player_id: selfOrder ? selfOrderPlayerId : null,
       self_order_player_name: selfOrder ? selfOrderPlayerName : null,
       self_order_discount: selfOrder && selfDiscountAllowed ? 0.1 : 0,
-      self_payment: selfOrder ? selfPayment : null
+      self_payment: selfOrder ? selfPayment : null,
+      original_system_amount: originalSystemAmount,
+      customer_discount_rate: selfOrder ? (selfDiscountAllowed ? 0.9 : 1) : customerDiscountRate,
+      customer_discount_label: selfOrder ? (selfDiscountAllowed ? '打手自下單9折' : '無折扣') : customerDiscount,
+      player_absorbs_discount: !selfOrder && customerDiscountRate < 1 ? playerAbsorbsDiscount : false
     })
 
     const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
     const storedRate = currentAmount > 0 ? dispatchFee / currentAmount : 0
 
     setBusy(true)
+
+    let orderCustomerId = customerId
+    if (selfOrder) {
+      const { data: existingCustomer } = await supabase
+        .from('customers')
+        .select('id')
+        .ilike('display_name', selfOrderPlayerName)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingCustomer?.id) {
+        orderCustomerId = existingCustomer.id
+      } else {
+        const { data: createdCustomer, error: customerError } = await supabase
+          .from('customers')
+          .insert({ display_name: selfOrderPlayerName })
+          .select('id')
+          .single()
+        if (customerError || !createdCustomer) {
+          setBusy(false)
+          return Alert.alert('建立打手下單資料失敗', customerError?.message ?? 'Unknown error')
+        }
+        orderCustomerId = createdCustomer.id
+      }
+    }
+
     const { data: order, error } = await supabase.from('orders').insert({
-      customer_id: customerId,
+      customer_id: orderCustomerId,
       order_type_id: dbType.id,
       created_by: profile?.id,
       dispatcher_id: dispatcherId || null,
@@ -550,6 +599,9 @@ export default function NewOrderV2Screen() {
     setSelfOrderPlayerId('')
     setSelfOrderPlayerName('')
     setSelfPayment('直接付款')
+    setCustomerDiscount('無折扣')
+    setCustomDiscountPct('90')
+    setPlayerAbsorbsDiscount(false)
     setOrderDate(todayLocal())
     resetCategory(category)
     recalculate(true)
@@ -663,41 +715,115 @@ export default function NewOrderV2Screen() {
           <Text style={styles.label}>下單日期</Text>
           <Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
 
-          <SearchPicker
-            label="下單老闆"
-            selectedLabel={customerName || '點這裡選擇老闆'}
-            open={customerOpen}
-            onToggle={() => setCustomerOpen(!customerOpen)}
-            query={customerQuery}
-            setQuery={setCustomerQuery}
-            items={customerItems}
-            onSelect={(item: SearchItem) => {
-              setCustomerId(item.id)
-              setCustomerName(item.label)
-              setCustomerQuery('')
+          <Segment
+            label="下單身份"
+            options={['一般老闆', '打手自己下單']}
+            value={selfOrder ? '打手自己下單' : '一般老闆'}
+            onChange={(value) => {
+              const enabled = value === '打手自己下單'
+              setSelfOrder(enabled)
+              setAmountManual(false)
               setCustomerOpen(false)
+              setSelfOrderOpen(false)
+              if (enabled) {
+                setCustomerId('')
+                setCustomerName('')
+                setCustomerQuery('')
+                setShowAddCustomer(false)
+                setCustomerDiscount('無折扣')
+                setPlayerAbsorbsDiscount(false)
+              } else {
+                setSelfOrderPlayerId('')
+                setSelfOrderPlayerName('')
+                setSelfOrderQuery('')
+                setSelfPayment('直接付款')
+              }
             }}
-            addLabel="＋ 名單沒有？新增老闆"
-            onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }}
           />
 
-          {showAddCustomer ? (
-            <View style={styles.inline}>
-              <Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" />
-              <Button title="新增並選擇" onPress={addCustomer} />
-              <Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} />
-            </View>
-          ) : null}
-
-          <Segment label="下單身份" options={['一般老闆', '打手自己下單']} value={selfOrder ? '打手自己下單' : '一般老闆'} onChange={(value) => { const enabled = value === '打手自己下單'; setSelfOrder(enabled); if (!enabled) { setSelfOrderPlayerId(''); setSelfOrderPlayerName(''); setSelfPayment('直接付款') }; setAmountManual(false) }} />
-
-          {selfOrder ? (
+          {!selfOrder ? (
             <>
-              <SearchPicker label="下單打手" selectedLabel={selfOrderPlayerName || '點這裡選擇打手'} open={selfOrderOpen} onToggle={() => setSelfOrderOpen(!selfOrderOpen)} query={selfOrderQuery} setQuery={setSelfOrderQuery} items={playersList.map((player) => ({ id: player.id, label: player.display_name }))} onSelect={(item: SearchItem) => { setSelfOrderPlayerId(item.id); setSelfOrderPlayerName(item.label); setSelfOrderQuery(''); setSelfOrderOpen(false) }} addLabel="" onAdd={() => {}} hideAdd />
-              <Segment label="付款方式" options={['直接付款', '薪資扣款']} value={selfPayment} onChange={(value) => setSelfPayment(value as '直接付款' | '薪資扣款')} />
-              <Muted>{selfDiscountAllowed ? '打手自己下單自動 9 折。' : `${category} 不享打手自下單 9 折。`}</Muted>
+              <SearchPicker
+                label="下單老闆"
+                selectedLabel={customerName || '點這裡選擇老闆'}
+                open={customerOpen}
+                onToggle={() => setCustomerOpen(!customerOpen)}
+                query={customerQuery}
+                setQuery={setCustomerQuery}
+                items={customerItems}
+                onSelect={(item: SearchItem) => {
+                  setCustomerId(item.id)
+                  setCustomerName(item.label)
+                  setCustomerQuery('')
+                  setCustomerOpen(false)
+                }}
+                addLabel="＋ 名單沒有？新增老闆"
+                onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }}
+              />
+
+              {showAddCustomer ? (
+                <View style={styles.inline}>
+                  <Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" />
+                  <Button title="新增並選擇" onPress={addCustomer} />
+                  <Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} />
+                </View>
+              ) : null}
+
+              <Segment
+                label="老闆折扣"
+                options={['無折扣', '9折', '85折', '自訂']}
+                value={customerDiscount}
+                onChange={(value) => {
+                  setCustomerDiscount(value as '無折扣' | '9折' | '85折' | '自訂')
+                  setAmountManual(false)
+                  if (value === '無折扣') setPlayerAbsorbsDiscount(false)
+                }}
+              />
+
+              {customerDiscount === '自訂' ? (
+                <>
+                  <Text style={styles.label}>自訂折扣（付款比例 %）</Text>
+                  <Field value={customDiscountPct} onChangeText={(value) => { setCustomDiscountPct(value); setAmountManual(false) }} keyboardType="decimal-pad" placeholder="例如 80 = 8折" />
+                </>
+              ) : null}
+
+              {customerDiscount !== '無折扣' ? (
+                <Segment
+                  label="折扣由誰吸收"
+                  options={['公司吸收', '打手吸收']}
+                  value={playerAbsorbsDiscount ? '打手吸收' : '公司吸收'}
+                  onChange={(value) => { setPlayerAbsorbsDiscount(value === '打手吸收'); setAmountManual(false) }}
+                />
+              ) : null}
+
+              {customerDiscount !== '無折扣' ? (
+                <Muted>{playerAbsorbsDiscount ? '打手吸收：打手實拿會依折扣後金額同比例計算。' : '公司吸收：老闆付折扣價，但打手仍按原價計算實拿。'}</Muted>
+              ) : null}
             </>
-          ) : null}
+          ) : (
+            <>
+              <SearchPicker
+                label="下單打手"
+                selectedLabel={selfOrderPlayerName || '點這裡選擇打手'}
+                open={selfOrderOpen}
+                onToggle={() => setSelfOrderOpen(!selfOrderOpen)}
+                query={selfOrderQuery}
+                setQuery={setSelfOrderQuery}
+                items={playersList.map((player) => ({ id: player.id, label: player.display_name }))}
+                onSelect={(item: SearchItem) => {
+                  setSelfOrderPlayerId(item.id)
+                  setSelfOrderPlayerName(item.label)
+                  setSelfOrderQuery('')
+                  setSelfOrderOpen(false)
+                }}
+                addLabel=""
+                onAdd={() => {}}
+                hideAdd
+              />
+              <Segment label="付款方式" options={['直接付款', '薪資扣款']} value={selfPayment} onChange={(value) => setSelfPayment(value as '直接付款' | '薪資扣款')} />
+              <Muted>{selfDiscountAllowed ? '打手自己下單自動 9 折；接單打手實拿仍按原價計算。' : `${category} 不享打手自下單 9 折。`}</Muted>
+            </>
+          )}
 
           <Text style={styles.label}>總金額</Text>
           <Field
@@ -714,7 +840,7 @@ export default function NewOrderV2Screen() {
           />
 
           <View style={styles.summaryRow}>
-            <Muted>系統價：${systemAmount}</Muted>
+            <Muted>{originalSystemAmount !== systemAmount ? `原價：$${originalSystemAmount}｜折扣後：$${systemAmount}` : `系統價：$${systemAmount}`}</Muted>
             {amountManual ? (
               <Pressable onPress={() => { setAmountManual(false); setAmount(String(systemAmount)) }}>
                 <Text style={styles.link}>套用系統價</Text>
