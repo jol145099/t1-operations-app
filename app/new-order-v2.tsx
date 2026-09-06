@@ -31,7 +31,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
 
 type Customer = { id: string; display_name: string; aliases: string[] | null }
-type Player = { id: string; display_name: string }
+type PlayerType = 'technical' | 'female'
+type Player = { id: string; display_name: string; player_type: PlayerType }
 type Dispatcher = { id: string; display_name: string; role: string }
 type OrderType = { id: string; name: string; requires_player: boolean }
 type PlayerSlot = { playerId: string; playerName: string; rank: Rank; pay: string }
@@ -110,6 +111,7 @@ export default function NewOrderV2Screen() {
   const [playerQueries, setPlayerQueries] = useState<Record<number, string>>({})
   const [showAddPlayer, setShowAddPlayer] = useState<number | null>(null)
   const [newPlayer, setNewPlayer] = useState('')
+  const [newPlayerType, setNewPlayerType] = useState<PlayerType>('technical')
 
   useEffect(() => {
     if (!allowed) return
@@ -120,7 +122,7 @@ export default function NewOrderV2Screen() {
     setLoading(true)
     const [c, p, d, t] = await Promise.all([
       supabase.from('customers').select('id, display_name, aliases').eq('active', true).order('display_name'),
-      supabase.from('players').select('id, display_name').eq('active', true).order('display_name'),
+      supabase.from('players').select('id, display_name, player_type').eq('active', true).order('display_name'),
       supabase.from('profiles').select('id, display_name, role').eq('active', true).in('role', ['staff', 'admin']).order('display_name'),
       supabase.from('order_types').select('id, name, requires_player').eq('active', true).order('name')
     ])
@@ -155,6 +157,8 @@ export default function NewOrderV2Screen() {
   function resetCategory(next: ServiceCategory) {
     setSimpleDetail('')
     setPlayerQueries({})
+    setPlayerOpen(null)
+    setShowAddPlayer(null)
     setCustomNeedsPlayers(false)
     setResponsible(['實名', '賽季3x3', '調畫質'].includes(next) ? '林峰' : next === '跑刀' ? '華' : next === '代儲' ? '小白' : '')
 
@@ -168,7 +172,8 @@ export default function NewOrderV2Screen() {
       setSlots([blankSlot('A')])
     } else if (next === '女陪單') {
       setFemaleMode('女+技術陪')
-      setSlots([blankSlot(), blankSlot()])
+      setFemaleTechRank('B')
+      setSlots([blankSlot(), blankSlot('B')])
     } else {
       setSlots([])
     }
@@ -199,6 +204,32 @@ export default function NewOrderV2Screen() {
       return next
     })
     setSlots((current) => current.map((slot, i) => i === index ? { ...slot, rank } : slot))
+    setAmountManual(false)
+  }
+
+  function changeFemaleMode(mode: '女+技術陪' | '純女陪') {
+    setFemaleMode(mode)
+    setPlayerQueries({})
+    setPlayerOpen(null)
+    if (mode === '女+技術陪') {
+      setSlots([blankSlot(), blankSlot(femaleTechRank)])
+    } else {
+      setSlots(femalePureMode === '單陪' ? [blankSlot()] : [blankSlot(), blankSlot()])
+    }
+    setAmountManual(false)
+  }
+
+  function changeFemalePureMode(mode: '單陪' | '雙陪') {
+    setFemalePureMode(mode)
+    setPlayerQueries({})
+    setPlayerOpen(null)
+    setSlots(mode === '單陪' ? [blankSlot()] : [blankSlot(), blankSlot()])
+    setAmountManual(false)
+  }
+
+  function changeFemaleTechRank(rank: Rank) {
+    setFemaleTechRank(rank)
+    setSlots((current) => current.map((slot, index) => index === 1 ? { ...slot, rank } : slot))
     setAmountManual(false)
   }
 
@@ -240,6 +271,18 @@ export default function NewOrderV2Screen() {
     if (pays.length) setSlots((current) => current.map((slot, index) => ({ ...slot, pay: String(pays[index] ?? 0) })))
   }
 
+  function requiredPlayerType(index: number): PlayerType {
+    if (category !== '女陪單') return 'technical'
+    if (femaleMode === '純女陪') return 'female'
+    return index === 0 ? 'female' : 'technical'
+  }
+
+  function playerFieldLabel(index: number) {
+    if (category !== '女陪單') return `打手 ${index + 1}`
+    if (femaleMode === '純女陪') return femalePureMode === '單陪' ? '女陪' : `女陪 ${index + 1}`
+    return index === 0 ? '女陪' : `技術陪（${femaleTechRank}級）`
+  }
+
   function chooseDispatcher(item: Dispatcher) {
     setDispatcherId(item.id)
     setDispatcherName(item.display_name)
@@ -259,7 +302,7 @@ export default function NewOrderV2Screen() {
 
   async function addPlayer(index: number) {
     const name = newPlayer.trim(); if (!name) return
-    const { data, error } = await supabase.from('players').insert({ display_name: name }).select('id, display_name').single()
+    const { data, error } = await supabase.from('players').insert({ display_name: name, player_type: newPlayerType }).select('id, display_name, player_type').single()
     if (error || !data) return Alert.alert('新增打手失敗', error?.message ?? 'Unknown error')
     const item = data as Player
     setPlayersList((current) => [...current, item].sort((a, b) => a.display_name.localeCompare(b.display_name)))
@@ -329,12 +372,12 @@ export default function NewOrderV2Screen() {
     if (error || !order) { setBusy(false); return Alert.alert('報單失敗', error?.message ?? 'Unknown error') }
 
     if (requiresPlayers) {
-      const { error: assignmentError } = await supabase.from('order_players').insert(slots.map((slot) => ({
+      const { error: assignmentError } = await supabase.from('order_players').insert(slots.map((slot, index) => ({
         order_id: order.id,
         player_id: slot.playerId,
         assigned_pay: ceilMoney(Number(slot.pay || 0)),
         status: 'assigned',
-        notes: category === '小時單' ? `${slot.rank}級接單` : null
+        notes: category === '小時單' ? `${slot.rank}級接單` : category === '女陪單' ? `${playerFieldLabel(index)}接單` : null
       })))
       if (assignmentError) { setBusy(false); return Alert.alert('訂單已建立，但派打手失敗', assignmentError.message) }
     }
@@ -367,8 +410,8 @@ export default function NewOrderV2Screen() {
             category={category} secrecy={secrecy} setSecrecy={setSecrecy} hours={hours} setHours={setHours}
             hourlyMode={hourlyMode} setHourlyMode={changeHourlyMode} hourlyRanks={hourlyRanks} setHourlyRank={changeHourlyRank}
             guaranteeTier={guaranteeTier} setGuaranteeTier={setGuaranteeTier} trialPeriod={trialPeriod} setTrialPeriod={setTrialPeriod}
-            femaleMode={femaleMode} setFemaleMode={setFemaleMode} femalePureMode={femalePureMode} setFemalePureMode={setFemalePureMode}
-            femaleTechRank={femaleTechRank} setFemaleTechRank={setFemaleTechRank} entertainmentType={entertainmentType}
+            femaleMode={femaleMode} setFemaleMode={changeFemaleMode} femalePureMode={femalePureMode} setFemalePureMode={changeFemalePureMode}
+            femaleTechRank={femaleTechRank} setFemaleTechRank={changeFemaleTechRank} entertainmentType={entertainmentType}
             setEntertainmentType={(value: EntertainmentType) => { const opts = ENTERTAINMENT_OPTIONS[value] as readonly { label: string; price: number }[]; setEntertainmentType(value); setEntertainmentOption(opts[0]?.label ?? ''); setAmountManual(false) }}
             entertainmentOption={entertainmentOption} setEntertainmentOption={(value: string) => { setEntertainmentOption(value); setAmountManual(false) }} entertainmentOptions={entertainmentOptions}
             runTier={runTier} setRunTier={setRunTier} collisionTier={collisionTier} setCollisionTier={setCollisionTier}
@@ -382,7 +425,7 @@ export default function NewOrderV2Screen() {
         <Card>
           <H2>2. 下單資料</H2>
           <Text style={styles.label}>下單日期</Text><Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
-          <SearchPicker label="下單老闆" selectedLabel={customerName || '點這裡選擇老闆'} open={customerOpen} onToggle={() => setCustomerOpen(!customerOpen)} query={customerQuery} setQuery={setCustomerQuery} items={customerItems} onSelect={(item) => { setCustomerId(item.id); setCustomerName(item.label); setCustomerQuery(''); setCustomerOpen(false) }} addLabel="＋ 名單沒有？新增老闆" onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }} />
+          <SearchPicker label="下單老闆" selectedLabel={customerName || '點這裡選擇老闆'} open={customerOpen} onToggle={() => setCustomerOpen(!customerOpen)} query={customerQuery} setQuery={setCustomerQuery} items={customerItems} onSelect={(item: SearchItem) => { setCustomerId(item.id); setCustomerName(item.label); setCustomerQuery(''); setCustomerOpen(false) }} addLabel="＋ 名單沒有？新增老闆" onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }} />
           {showAddCustomer ? <View style={styles.inline}><Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" /><Button title="新增並選擇" onPress={addCustomer} /><Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} /></View> : null}
           <Text style={styles.label}>總金額</Text>
           <Field value={amount} onChangeText={(value) => { setAmount(value); setAmountManual(true); if (category === '娛樂單') { const result = entertainmentPricing(Number(value || 0)); setSlots((current) => current.map((slot, i) => ({ ...slot, pay: String(result.pays[i] ?? 0) }))) } }} keyboardType="decimal-pad" />
@@ -392,13 +435,25 @@ export default function NewOrderV2Screen() {
         {requiresPlayers ? <Card>
           <H2>3. 打手與實拿</H2>
           {category === '小時單' ? <Muted>上面選的是這張小時單需要的等級；這裡再指定「哪個打手以哪個等級接單」。</Muted> : null}
+          {category === '女陪單' ? <Muted>{femaleMode === '女+技術陪' ? '女陪欄只顯示女陪名單；技術陪欄只顯示技術打手名單。' : '純女陪只會顯示女陪名單。'}</Muted> : null}
           {slots.map((slot, index) => {
-            const playerItems = playersList.filter((player) => !slots.some((other, otherIndex) => otherIndex !== index && other.playerId === player.id)).map((player) => ({ id: player.id, label: player.display_name }))
+            const expectedType = requiredPlayerType(index)
+            const playerItems: SearchItem[] = playersList
+              .filter((player) => player.player_type === expectedType)
+              .filter((player) => !slots.some((other, otherIndex) => otherIndex !== index && other.playerId === player.id))
+              .map((player) => ({ id: player.id, label: player.display_name }))
+            const fieldLabel = playerFieldLabel(index)
             return <View key={index} style={styles.playerBox}>
-              <SearchPicker label={`打手 ${index + 1}`} selectedLabel={slot.playerName || '點這裡選擇打手'} open={playerOpen === index} onToggle={() => setPlayerOpen(playerOpen === index ? null : index)} query={playerQueries[index] ?? ''} setQuery={(value) => setPlayerQueries((current) => ({ ...current, [index]: value }))} items={playerItems} onSelect={(item) => { const player = playersList.find((p) => p.id === item.id); if (player) choosePlayer(index, player) }} addLabel="＋ 名單沒有？新增打手" onAdd={() => { setPlayerOpen(null); setShowAddPlayer(index) }} />
-              {showAddPlayer === index ? <View style={styles.inline}><Field value={newPlayer} onChangeText={setNewPlayer} placeholder="新打手名稱" /><Button title="新增並選擇" onPress={() => addPlayer(index)} /><Button title="取消" tone="neutral" onPress={() => setShowAddPlayer(null)} /></View> : null}
+              <SearchPicker label={fieldLabel} selectedLabel={slot.playerName || `點這裡選擇${fieldLabel}`} open={playerOpen === index} onToggle={() => setPlayerOpen(playerOpen === index ? null : index)} query={playerQueries[index] ?? ''} setQuery={(value: string) => setPlayerQueries((current) => ({ ...current, [index]: value }))} items={playerItems} onSelect={(item: SearchItem) => { const player = playersList.find((p) => p.id === item.id); if (player) choosePlayer(index, player) }} addLabel={`＋ 名單沒有？新增${expectedType === 'female' ? '女陪' : '技術打手'}`} onAdd={() => { setPlayerOpen(null); setShowAddPlayer(index); setNewPlayerType(expectedType); setNewPlayer('') }} />
+              {showAddPlayer === index ? <View style={styles.inline}>
+                <Field value={newPlayer} onChangeText={setNewPlayer} placeholder={newPlayerType === 'female' ? '新女陪名稱' : '新技術打手名稱'} />
+                <Segment label="打手類型" options={['技術陪', '女陪']} value={newPlayerType === 'female' ? '女陪' : '技術陪'} onChange={(value) => setNewPlayerType(value === '女陪' ? 'female' : 'technical')} />
+                <Button title="新增並選擇" onPress={() => addPlayer(index)} />
+                <Button title="取消" tone="neutral" onPress={() => setShowAddPlayer(null)} />
+              </View> : null}
               {category === '小時單' ? <Segment label="這位打手以哪個等級接單" options={Array.from(new Set(hourlyRanks))} value={slot.rank} onChange={(value) => { const rank = value as Rank; setSlots((current) => current.map((s, i) => i === index ? { ...s, rank } : s)); setAmountManual(false) }} /> : null}
-              <Text style={styles.label}>打手實拿金額</Text><Field value={slot.pay} onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, pay: value } : s))} keyboardType="decimal-pad" />
+              {category === '女陪單' && femaleMode === '女+技術陪' && index === 1 ? <Muted>這位技術陪以 {femaleTechRank} 級接單。</Muted> : null}
+              <Text style={styles.label}>{fieldLabel}實拿金額</Text><Field value={slot.pay} onChangeText={(value) => setSlots((current) => current.map((s, i) => i === index ? { ...s, pay: value } : s))} keyboardType="decimal-pad" />
             </View>
           })}
         </Card> : null}
@@ -430,7 +485,7 @@ function CategoryFields(props: any) {
     {['小時單', '教學單', '女陪單'].includes(c) ? <><Text style={styles.label}>小時數</Text><Field value={props.hours} onChangeText={props.setHours} keyboardType="decimal-pad" placeholder="例如 2.5" /></> : null}
     {c === '保底單' ? <Segment label="保底金額" options={Object.keys(GUARANTEE_PRICE.機密)} value={props.guaranteeTier} onChange={props.setGuaranteeTier} /> : null}
     {c === '體驗單' ? <Segment label="體驗方案" options={['每日', '每週']} value={props.trialPeriod} onChange={props.setTrialPeriod} /> : null}
-    {c === '女陪單' ? <><Segment label="女陪類型" options={['女+技術陪', '純女陪']} value={props.femaleMode} onChange={(value) => { props.setFemaleMode(value); props.setSlotCount(value === '女+技術陪' ? 2 : props.femalePureMode === '單陪' ? 1 : 2) }} />{props.femaleMode === '女+技術陪' ? <Segment label="技術陪等級" options={RANKS} value={props.femaleTechRank} onChange={props.setFemaleTechRank} /> : <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.femalePureMode} onChange={(value) => { props.setFemalePureMode(value); props.setSlotCount(value === '單陪' ? 1 : 2) }} />}</> : null}
+    {c === '女陪單' ? <><Segment label="女陪類型" options={['女+技術陪', '純女陪']} value={props.femaleMode} onChange={props.setFemaleMode} />{props.femaleMode === '女+技術陪' ? <Segment label="技術陪等級" options={RANKS} value={props.femaleTechRank} onChange={props.setFemaleTechRank} /> : <Segment label="單陪 / 雙陪" options={['單陪', '雙陪']} value={props.femalePureMode} onChange={props.setFemalePureMode} />}</> : null}
     {c === '娛樂單' ? <><Segment label="娛樂單種類" options={ENTERTAINMENT_TYPES} value={props.entertainmentType} onChange={props.setEntertainmentType} /><Segment label="方案" options={props.entertainmentOptions.map((o: any) => o.label)} value={props.entertainmentOption} onChange={props.setEntertainmentOption} />{props.entertainmentOptions.find((o: any) => o.label === props.entertainmentOption)?.price === 0 ? <Muted>此方案沒有固定金額，總金額預設為 0。</Muted> : null}</> : null}
     {c === '跑刀' ? <><Segment label="跑刀" options={['1000w', '5000w', '1e', '自訂']} value={props.runTier} onChange={props.setRunTier} /><Segment label="負責人" options={['華', '望舒', '睡', '其他']} value={['華', '望舒', '睡'].includes(props.responsible) ? props.responsible : '其他'} onChange={(value) => props.setResponsible(value === '其他' ? '' : value)} />{!['華', '望舒', '睡'].includes(props.responsible) ? <Field value={props.responsible} onChangeText={props.setResponsible} placeholder="其他負責人" /> : null}</> : null}
     {c === '撞車' ? <><Segment label="撞車" options={['1000w', '1500w', '3000w', '5000w', '1e', '自訂']} value={props.collisionTier} onChange={props.setCollisionTier} /><Field value={props.responsible} onChangeText={props.setResponsible} placeholder="負責接的人" /></> : null}
