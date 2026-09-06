@@ -85,6 +85,12 @@ export default function NewOrderV2Screen() {
   const [amount, setAmount] = useState('0')
   const [systemAmount, setSystemAmount] = useState(0)
   const [amountManual, setAmountManual] = useState(false)
+  const [selfOrder, setSelfOrder] = useState(false)
+  const [selfOrderPlayerId, setSelfOrderPlayerId] = useState('')
+  const [selfOrderPlayerName, setSelfOrderPlayerName] = useState('')
+  const [selfOrderOpen, setSelfOrderOpen] = useState(false)
+  const [selfOrderQuery, setSelfOrderQuery] = useState('')
+  const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')
 
   const [secrecy, setSecrecy] = useState<Secrecy>('機密')
   const [hours, setHours] = useState('1')
@@ -143,6 +149,7 @@ export default function NewOrderV2Screen() {
   const requiresPlayers = shouldRequirePlayers(category)
   const nominalRate = Math.max(0, Number(dispatchPct || 0) / 100)
   const currentAmount = Math.max(0, Number(amount || 0))
+  const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)
   const dispatchFee = ceilMoney(currentAmount * nominalRate)
   const entertainmentOptions = ENTERTAINMENT_OPTIONS[entertainmentType] as readonly { label: string; price: number }[]
   const dispatchPresetValue = DISPATCH_PRESETS.includes(dispatchPct as (typeof DISPATCH_PRESETS)[number])
@@ -175,7 +182,8 @@ export default function NewOrderV2Screen() {
     identityMode,
     seasonMode,
     topupIndex,
-    amountManual
+    amountManual,
+    selfOrder
   ])
 
   function resetCategory(next: ServiceCategory) {
@@ -310,6 +318,7 @@ export default function NewOrderV2Screen() {
       setTopupRmb(String(TOPUP_OPTIONS[topupIndex].rmb))
     }
 
+    if (selfOrder && selfDiscountAllowed) total = ceilMoney(total * 0.9)
     setSystemAmount(total)
     if (!amountManual || force) setAmount(String(total))
     if (pays.length) {
@@ -442,6 +451,7 @@ export default function NewOrderV2Screen() {
   ])
 
   async function submit() {
+    if (selfOrder && !selfOrderPlayerId) return Alert.alert('資料不足', '打手自己下單時，請選擇是哪位打手。')
     if (!customerId) return Alert.alert('資料不足', '請選擇下單老闆。')
     if (!orderDate.match(/^\d{4}-\d{2}-\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
     if (!dispatcherId && nominalRate > 0) return Alert.alert('資料不足', '有派單抽成時請選擇派單人。')
@@ -467,7 +477,12 @@ export default function NewOrderV2Screen() {
       manual_amount: amountManual,
       nominal_dispatch_rate: nominalRate,
       nominal_dispatch_fee: dispatchFee,
-      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null
+      topup_rmb: category === '代儲' ? Number(topupRmb || 0) : null,
+      self_order: selfOrder,
+      self_order_player_id: selfOrder ? selfOrderPlayerId : null,
+      self_order_player_name: selfOrder ? selfOrderPlayerName : null,
+      self_order_discount: selfOrder && selfDiscountAllowed ? 0.1 : 0,
+      self_payment: selfOrder ? selfPayment : null
     })
 
     const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
@@ -515,12 +530,26 @@ export default function NewOrderV2Screen() {
       }
     }
 
+    if (selfOrder && selfPayment === '薪資扣款') {
+      const { error: ledgerError } = await supabase.from('ledger').insert({
+        player_id: selfOrderPlayerId, order_id: order.id, type: 'other',
+        amount: -ceilMoney(currentAmount),
+        description: `自己下單薪資扣款｜${category}｜${detailSummary}`,
+        created_by: profile?.id, occurred_at: createdAt
+      })
+      if (ledgerError) { setBusy(false); return Alert.alert('訂單已建立，但薪資扣款紀錄失敗', ledgerError.message) }
+    }
+
     setBusy(false)
     Alert.alert('報單完成', `${order.order_no}\n總金額 $${ceilMoney(currentAmount)}\n派單抽成 ${dispatchPct || 0}% = $${dispatchFee}`)
     setCustomerId('')
     setCustomerName('')
     setCustomerQuery('')
     setAmountManual(false)
+    setSelfOrder(false)
+    setSelfOrderPlayerId('')
+    setSelfOrderPlayerName('')
+    setSelfPayment('直接付款')
     setOrderDate(todayLocal())
     resetCategory(category)
     recalculate(true)
@@ -658,6 +687,16 @@ export default function NewOrderV2Screen() {
               <Button title="新增並選擇" onPress={addCustomer} />
               <Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} />
             </View>
+          ) : null}
+
+          <Segment label="下單身份" options={['一般老闆', '打手自己下單']} value={selfOrder ? '打手自己下單' : '一般老闆'} onChange={(value) => { const enabled = value === '打手自己下單'; setSelfOrder(enabled); if (!enabled) { setSelfOrderPlayerId(''); setSelfOrderPlayerName(''); setSelfPayment('直接付款') }; setAmountManual(false) }} />
+
+          {selfOrder ? (
+            <>
+              <SearchPicker label="下單打手" selectedLabel={selfOrderPlayerName || '點這裡選擇打手'} open={selfOrderOpen} onToggle={() => setSelfOrderOpen(!selfOrderOpen)} query={selfOrderQuery} setQuery={setSelfOrderQuery} items={playersList.map((player) => ({ id: player.id, label: player.display_name }))} onSelect={(item: SearchItem) => { setSelfOrderPlayerId(item.id); setSelfOrderPlayerName(item.label); setSelfOrderQuery(''); setSelfOrderOpen(false) }} addLabel="" onAdd={() => {}} hideAdd />
+              <Segment label="付款方式" options={['直接付款', '薪資扣款']} value={selfPayment} onChange={(value) => setSelfPayment(value as '直接付款' | '薪資扣款')} />
+              <Muted>{selfDiscountAllowed ? '打手自己下單自動 9 折。' : `${category} 不享打手自下單 9 折。`}</Muted>
+            </>
           ) : null}
 
           <Text style={styles.label}>總金額</Text>
@@ -906,7 +945,7 @@ function CategoryFields(props: any) {
   )
 }
 
-function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd }: any) {
+function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, items, onSelect, addLabel, onAdd, hideAdd = false }: any) {
   const q = query.trim().toLowerCase()
   const filtered = items.filter((item: SearchItem) => !q || (item.searchText ?? item.label).toLowerCase().includes(q))
 
@@ -918,7 +957,7 @@ function SearchPicker({ label, selectedLabel, open, onToggle, query, setQuery, i
           {filtered.map((item: SearchItem) => <Choice key={item.id} text={item.label} onPress={() => onSelect(item)} />)}
           {filtered.length === 0 ? <Text style={styles.emptyText}>找不到符合資料</Text> : null}
         </ScrollView>
-        <Choice text={addLabel} onPress={onAdd} accent />
+        {!hideAdd ? <Choice text={addLabel} onPress={onAdd} accent /> : null}
       </View>
     </Dropdown>
   )
