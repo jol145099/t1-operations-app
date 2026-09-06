@@ -1,0 +1,261 @@
+from pathlib import Path
+
+p = Path('app/new-order-v2.tsx')
+s = p.read_text()
+
+s = s.replace(
+    "  const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')\n",
+    "  const [selfPayment, setSelfPayment] = useState<'直接付款' | '薪資扣款'>('直接付款')\n"
+    "  const [customerDiscount, setCustomerDiscount] = useState<'無折扣' | '9折' | '85折' | '自訂'>('無折扣')\n"
+    "  const [customDiscountPct, setCustomDiscountPct] = useState('90')\n"
+    "  const [playerAbsorbsDiscount, setPlayerAbsorbsDiscount] = useState(false)\n"
+    "  const [originalSystemAmount, setOriginalSystemAmount] = useState(0)\n"
+)
+
+s = s.replace(
+    "  const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)\n  const dispatchFee = ceilMoney(currentAmount * nominalRate)\n",
+    "  const selfDiscountAllowed = !['實名', '調畫質', '代儲'].includes(category)\n"
+    "  const customerDiscountRate = customerDiscount === '9折' ? 0.9 : customerDiscount === '85折' ? 0.85 : customerDiscount === '自訂' ? Math.max(0, Math.min(1, Number(customDiscountPct || 100) / 100)) : 1\n"
+    "  const dispatchFee = ceilMoney(currentAmount * nominalRate)\n"
+)
+
+s = s.replace(
+    "    amountManual,\n    selfOrder\n  ])",
+    "    amountManual,\n    selfOrder,\n    customerDiscount,\n    customDiscountPct,\n    playerAbsorbsDiscount\n  ])"
+)
+
+old = """    if (selfOrder && selfDiscountAllowed) total = ceilMoney(total * 0.9)
+    setSystemAmount(total)
+    if (!amountManual || force) setAmount(String(total))
+    if (pays.length) {
+      setSlots((current) => current.map((slot, index) => ({
+        ...slot,
+        rank: category === '小時單' ? (hourlyRanks[index] ?? slot.rank) : slot.rank,
+        pay: String(pays[index] ?? 0)
+      })))
+    }
+"""
+new = """    const baseTotal = total
+    setOriginalSystemAmount(baseTotal)
+
+    if (selfOrder && selfDiscountAllowed) {
+      total = ceilMoney(baseTotal * 0.9)
+    } else if (!selfOrder && customerDiscountRate < 1) {
+      total = ceilMoney(baseTotal * customerDiscountRate)
+      if (playerAbsorbsDiscount && pays.length) {
+        pays = pays.map((pay) => ceilMoney(pay * customerDiscountRate))
+      }
+    }
+
+    setSystemAmount(total)
+    if (!amountManual || force) setAmount(String(total))
+    if (pays.length) {
+      setSlots((current) => current.map((slot, index) => ({
+        ...slot,
+        rank: category === '小時單' ? (hourlyRanks[index] ?? slot.rank) : slot.rank,
+        pay: String(pays[index] ?? 0)
+      })))
+    }
+"""
+if old not in s:
+    raise SystemExit('recalculate block not found')
+s = s.replace(old, new)
+
+old = """  async function submit() {
+    if (selfOrder && !selfOrderPlayerId) return Alert.alert('資料不足', '打手自己下單時，請選擇是哪位打手。')
+    if (!customerId) return Alert.alert('資料不足', '請選擇下單老闆。')
+    if (!orderDate.match(/^\\d{4}-\\d{2}-\\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
+"""
+new = """  async function submit() {
+    if (selfOrder && !selfOrderPlayerId) return Alert.alert('資料不足', '打手自己下單時，請選擇是哪位打手。')
+    if (!selfOrder && !customerId) return Alert.alert('資料不足', '一般老闆下單時，請選擇下單老闆。')
+    if (!orderDate.match(/^\\d{4}-\\d{2}-\\d{2}$/)) return Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
+"""
+if old not in s:
+    raise SystemExit('submit validation block not found')
+s = s.replace(old, new)
+
+s = s.replace(
+    "      self_payment: selfOrder ? selfPayment : null\n",
+    "      self_payment: selfOrder ? selfPayment : null,\n"
+    "      original_system_amount: originalSystemAmount,\n"
+    "      customer_discount_rate: selfOrder ? (selfDiscountAllowed ? 0.9 : 1) : customerDiscountRate,\n"
+    "      customer_discount_label: selfOrder ? (selfDiscountAllowed ? '打手自下單9折' : '無折扣') : customerDiscount,\n"
+    "      player_absorbs_discount: !selfOrder && customerDiscountRate < 1 ? playerAbsorbsDiscount : false\n"
+)
+
+old = """    const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
+    const storedRate = currentAmount > 0 ? dispatchFee / currentAmount : 0
+
+    setBusy(true)
+    const { data: order, error } = await supabase.from('orders').insert({
+      customer_id: customerId,
+"""
+new = """    const createdAt = new Date(`${orderDate}T12:00:00`).toISOString()
+    const storedRate = currentAmount > 0 ? dispatchFee / currentAmount : 0
+
+    setBusy(true)
+
+    let orderCustomerId = customerId
+    if (selfOrder) {
+      const { data: existingCustomer } = await supabase
+        .from('customers')
+        .select('id')
+        .ilike('display_name', selfOrderPlayerName)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingCustomer?.id) {
+        orderCustomerId = existingCustomer.id
+      } else {
+        const { data: createdCustomer, error: customerError } = await supabase
+          .from('customers')
+          .insert({ display_name: selfOrderPlayerName })
+          .select('id')
+          .single()
+        if (customerError || !createdCustomer) {
+          setBusy(false)
+          return Alert.alert('建立打手下單資料失敗', customerError?.message ?? 'Unknown error')
+        }
+        orderCustomerId = createdCustomer.id
+      }
+    }
+
+    const { data: order, error } = await supabase.from('orders').insert({
+      customer_id: orderCustomerId,
+"""
+if old not in s:
+    raise SystemExit('order insert block not found')
+s = s.replace(old, new)
+
+s = s.replace(
+    "    setSelfPayment('直接付款')\n    setOrderDate(todayLocal())\n",
+    "    setSelfPayment('直接付款')\n"
+    "    setCustomerDiscount('無折扣')\n"
+    "    setCustomDiscountPct('90')\n"
+    "    setPlayerAbsorbsDiscount(false)\n"
+    "    setOrderDate(todayLocal())\n"
+)
+
+start = s.index('          <SearchPicker\n            label="下單老闆"')
+end_marker = """          <Text style={styles.label}>總金額</Text>"""
+end = s.index(end_marker, start)
+replacement = """          <Segment
+            label="下單身份"
+            options={['一般老闆', '打手自己下單']}
+            value={selfOrder ? '打手自己下單' : '一般老闆'}
+            onChange={(value) => {
+              const enabled = value === '打手自己下單'
+              setSelfOrder(enabled)
+              setAmountManual(false)
+              setCustomerOpen(false)
+              setSelfOrderOpen(false)
+              if (enabled) {
+                setCustomerId('')
+                setCustomerName('')
+                setCustomerQuery('')
+                setShowAddCustomer(false)
+                setCustomerDiscount('無折扣')
+                setPlayerAbsorbsDiscount(false)
+              } else {
+                setSelfOrderPlayerId('')
+                setSelfOrderPlayerName('')
+                setSelfOrderQuery('')
+                setSelfPayment('直接付款')
+              }
+            }}
+          />
+
+          {!selfOrder ? (
+            <>
+              <SearchPicker
+                label="下單老闆"
+                selectedLabel={customerName || '點這裡選擇老闆'}
+                open={customerOpen}
+                onToggle={() => setCustomerOpen(!customerOpen)}
+                query={customerQuery}
+                setQuery={setCustomerQuery}
+                items={customerItems}
+                onSelect={(item: SearchItem) => {
+                  setCustomerId(item.id)
+                  setCustomerName(item.label)
+                  setCustomerQuery('')
+                  setCustomerOpen(false)
+                }}
+                addLabel="＋ 名單沒有？新增老闆"
+                onAdd={() => { setCustomerOpen(false); setShowAddCustomer(true) }}
+              />
+
+              {showAddCustomer ? (
+                <View style={styles.inline}>
+                  <Field value={newCustomer} onChangeText={setNewCustomer} placeholder="新老闆名稱" />
+                  <Button title="新增並選擇" onPress={addCustomer} />
+                  <Button title="取消" tone="neutral" onPress={() => setShowAddCustomer(false)} />
+                </View>
+              ) : null}
+
+              <Segment
+                label="老闆折扣"
+                options={['無折扣', '9折', '85折', '自訂']}
+                value={customerDiscount}
+                onChange={(value) => {
+                  setCustomerDiscount(value as '無折扣' | '9折' | '85折' | '自訂')
+                  setAmountManual(false)
+                  if (value === '無折扣') setPlayerAbsorbsDiscount(false)
+                }}
+              />
+
+              {customerDiscount === '自訂' ? (
+                <>
+                  <Text style={styles.label}>自訂折扣（付款比例 %）</Text>
+                  <Field value={customDiscountPct} onChangeText={(value) => { setCustomDiscountPct(value); setAmountManual(false) }} keyboardType="decimal-pad" placeholder="例如 80 = 8折" />
+                </>
+              ) : null}
+
+              {customerDiscount !== '無折扣' ? (
+                <Segment
+                  label="折扣由誰吸收"
+                  options={['公司吸收', '打手吸收']}
+                  value={playerAbsorbsDiscount ? '打手吸收' : '公司吸收'}
+                  onChange={(value) => { setPlayerAbsorbsDiscount(value === '打手吸收'); setAmountManual(false) }}
+                />
+              ) : null}
+
+              {customerDiscount !== '無折扣' ? (
+                <Muted>{playerAbsorbsDiscount ? '打手吸收：打手實拿會依折扣後金額同比例計算。' : '公司吸收：老闆付折扣價，但打手仍按原價計算實拿。'}</Muted>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <SearchPicker
+                label="下單打手"
+                selectedLabel={selfOrderPlayerName || '點這裡選擇打手'}
+                open={selfOrderOpen}
+                onToggle={() => setSelfOrderOpen(!selfOrderOpen)}
+                query={selfOrderQuery}
+                setQuery={setSelfOrderQuery}
+                items={playersList.map((player) => ({ id: player.id, label: player.display_name }))}
+                onSelect={(item: SearchItem) => {
+                  setSelfOrderPlayerId(item.id)
+                  setSelfOrderPlayerName(item.label)
+                  setSelfOrderQuery('')
+                  setSelfOrderOpen(false)
+                }}
+                addLabel=""
+                onAdd={() => {}}
+                hideAdd
+              />
+              <Segment label="付款方式" options={['直接付款', '薪資扣款']} value={selfPayment} onChange={(value) => setSelfPayment(value as '直接付款' | '薪資扣款')} />
+              <Muted>{selfDiscountAllowed ? '打手自己下單自動 9 折；接單打手實拿仍按原價計算。' : `${category} 不享打手自下單 9 折。`}</Muted>
+            </>
+          )}
+
+"""
+s = s[:start] + replacement + s[end:]
+
+s = s.replace(
+    "            <Muted>系統價：${systemAmount}</Muted>",
+    "            <Muted>{originalSystemAmount !== systemAmount ? `原價：$${originalSystemAmount}｜折扣後：$${systemAmount}` : `系統價：$${systemAmount}`}</Muted>"
+)
+
+p.write_text(s)
