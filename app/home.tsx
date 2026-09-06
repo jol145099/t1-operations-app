@@ -62,6 +62,7 @@ export default function HomeScreen() {
               <H2>營運中心</H2>
               <Muted>客服與店長可以報單、派單、記錄租號/賠付/預支，以及查看結算。</Muted>
               <Button title="＋ 新增報單" onPress={() => router.push('/new-order')} />
+              <Button title="打手帳務調整" onPress={() => router.push('/adjustments')} tone="neutral" />
               <Button title="所有訂單" onPress={() => router.push('/orders')} tone="neutral" />
               <Button title="兩週結算" onPress={() => router.push('/settlement')} tone="neutral" />
             </Card>
