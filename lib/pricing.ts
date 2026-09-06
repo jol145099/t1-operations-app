@@ -15,7 +15,6 @@ export type ServiceCategory =
   | '賽季3x3'
   | '調畫質'
   | '代儲'
-  | '其他（訂製單）'
 
 export type Secrecy = '機密' | '絕密'
 export type Rank = 'B' | 'A' | 'S' | 'SR'
@@ -26,7 +25,7 @@ export const SERVICE_GROUPS: { label: string; items: ServiceCategory[] }[] = [
   { label: '女陪單', items: ['女陪單'] },
   { label: '娛樂單', items: ['娛樂單'] },
   { label: '跑刀撞車', items: ['跑刀', '撞車', '撞紅', '撞子彈'] },
-  { label: '其他服務', items: ['代解任務', '實名', '賽季3x3', '調畫質', '代儲', '其他（訂製單）'] }
+  { label: '其他服務', items: ['代解任務', '實名', '賽季3x3', '調畫質', '代儲'] }
 ]
 
 export const HOURLY_PRICE: Record<Secrecy, Record<Rank, number>> = {
@@ -88,7 +87,8 @@ export const ENTERTAINMENT_OPTIONS = {
     { label: '5處', price: 7688 },
     { label: '6處', price: 11188 },
     { label: '7處', price: 15828 }
-  ]
+  ],
+  自訂: [{ label: '自訂', price: 0 }]
 } as const
 
 export type EntertainmentType = keyof typeof ENTERTAINMENT_OPTIONS
