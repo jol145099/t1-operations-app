@@ -1,0 +1,31 @@
+name: Restore new order form
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-new-order.yml'
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore and patch
+        shell: bash
+        run: |
+          git show e8d5b7b558014ac777eccbea9b77c638490ac266:app/new-order-v2.tsx > app/new-order-v2.tsx
+          python - <<'PY'
+          p='app/new-order-v2.tsx'
+          s=open(p, encoding='utf-8').read()
+          s=s.replace("setDispatchPct(String((dispatcherRole === 'admin' ? 0 : defaultDispatchRate(category)) * 100))", "setDispatchPct(String((dispatcherName.trim().toLowerCase() === 'bobo' ? 0 : defaultDispatchRate(category)) * 100))")
+          s=s.replace("setDispatchPct(item.role === 'admin' ? '0' : String(defaultDispatchRate(category) * 100))", "setDispatchPct(item.display_name.trim().toLowerCase() === 'bobo' ? '0' : String(defaultDispatchRate(category) * 100))")
+          s=s.replace("text={`${item.display_name}${item.role === 'admin' ? '（店長/Admin）' : ''}`}", "text={`${item.display_name}${item.display_name.trim().toLowerCase() === 'bobo' ? '（店長）' : ''}`}")
+          open(p,'w',encoding='utf-8').write(s)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/new-order-v2.tsx
+          git commit -m "Make only BoBo use zero dispatch default"
+          git push
