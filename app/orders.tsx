@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from 'react-native'
 
 import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -252,13 +251,11 @@ export default function OrdersScreen() {
           contentContainerStyle={{ gap: 10 }}
           ListEmptyComponent={<Muted>目前沒有可顯示的訂單。</Muted>}
           renderItem={({ item }) => (
-            <Pressable onPress={() => router.push({ pathname: '/order-pay-adjustments', params: { orderId: item.id, orderNo: item.order_no } })}>
             <Card>
               <Text style={styles.orderNo}>{item.order_no}</Text>
               <Text style={styles.amount}>${Number(item.amount_paid).toLocaleString()}</Text>
-              <Muted>{statusText(item.status)} · 點擊管理賠付／薪資</Muted>
+              <Muted>{statusText(item.status)}</Muted>
             </Card>
-            </Pressable>
           )}
         />
       )}
