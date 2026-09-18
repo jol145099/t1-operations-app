@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 
 import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
@@ -88,6 +88,10 @@ export default function OrdersScreen() {
 
   async function deleteOrder(item: OrderRow) {
     if (busyId) return
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm(`確定要刪除訂單 ${item.order_no}？\n\n刪除後無法復原。`) : false
+      if (!ok) return
+    }
     setBusyId(item.id)
     const { error } = await supabase.rpc('delete_t1_order', { p_order_id: item.id })
     setBusyId(null)
