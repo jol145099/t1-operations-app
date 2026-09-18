@@ -1,245 +1,36 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-
-import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
+import { useCallback,useState } from 'react'
+import { ActivityIndicator,Alert,FlatList,Platform,Pressable,ScrollView,StyleSheet,Text,View } from 'react-native'
+import { router,useFocusEffect,useLocalSearchParams } from 'expo-router'
+import { Button,Card,Field,H1,H2,Muted,Screen,colors } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
 
-type OrderRow = {
-  id: string
-  order_no: string
-  amount_paid: number
-  status: string
-  created_at: string
+const money=(n:any)=>`$${Number(n||0).toLocaleString()}`
+const day=(v?:string|null)=>v?String(v).slice(0,10):'—'
+function note(v:any){try{return JSON.parse(v||'{}')}catch{return{}}}
+function statusText(s:string){return({in_progress:'進行中',completed:'已結單',cancelled:'已取消',assigned:'待接單',accepted:'已接單'} as any)[s]||s}
+function dates(){const a=[];for(let i=0;i<31;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)}return a}
+
+export default function OrdersScreen(){
+ const {profile}=useAuth(),{status,days}=useLocalSearchParams<{status?:string;days?:string}>(),isPlayer=profile?.role==='player',canEdit=profile?.role==='staff'||profile?.role==='admin'
+ const [orders,setOrders]=useState<any[]>([]),[adjustments,setAdjustments]=useState<any[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[completionId,setCompletionId]=useState<string|null>(null),[completeDate,setCompleteDate]=useState(dates()[0]),[editAdj,setEditAdj]=useState<any|null>(null),[editAmount,setEditAmount]=useState(''),[editDesc,setEditDesc]=useState('')
+ const load=useCallback(async()=>{if(!profile)return;setLoading(true)
+  if(isPlayer){const {data:p}=await supabase.from('players').select('id').eq('profile_id',profile.id).maybeSingle();if(!p){setOrders([]);setAdjustments([]);setLoading(false);return}
+   let q=supabase.from('order_players').select('id,order_id,status,assigned_pay,calculated_pay,final_pay,is_active_slot,created_at,completed_at,orders(id,order_no,status,created_at,started_at,completed_at,notes)').eq('player_id',p.id).order('created_at',{ascending:false})
+   const [a,l]=await Promise.all([q,supabase.from('ledger').select('id,player_id,order_id,type,amount,description,occurred_at').eq('player_id',p.id).order('occurred_at',{ascending:false}).limit(100)])
+   let rows=(a.data??[]) as any[];if(status)rows=rows.filter(x=>x.orders?.status===status);setOrders(rows);setAdjustments(l.data??[])
+  }else{let q=supabase.from('orders').select('id,order_no,status,created_at,started_at,completed_at,notes,amount_paid,order_players(id,player_id,status,final_pay,assigned_pay,players(display_name))').order('created_at',{ascending:false}).limit(100);if(status)q=q.eq('status',status);if(status==='completed'&&days==='14')q=q.gte('completed_at',new Date(Date.now()-14*86400000).toISOString());const [o,l]=await Promise.all([q,supabase.from('ledger').select('id,player_id,order_id,type,amount,description,occurred_at,players(display_name)').order('occurred_at',{ascending:false}).limit(100)]);setOrders(o.data??[]);setAdjustments(l.data??[])}
+  setLoading(false)
+ },[profile?.id,isPlayer,status,days])
+ useFocusEffect(useCallback(()=>{void load()},[load]))
+ async function complete(x:any){setBusy(x.id);const {error}=await supabase.rpc('complete_t1_order',{p_order_id:x.order_id,p_completed_date:completeDate});setBusy('');if(error)Alert.alert('結單失敗',error.message);else{setCompletionId(null);await load()}}
+ async function delOrder(x:any){if(Platform.OS==='web'&&typeof window!=='undefined'&&!window.confirm(`確定刪除 ${x.order_no}？`))return;setBusy(x.id);const {error}=await supabase.rpc('delete_t1_order',{p_order_id:x.id});setBusy('');if(error)Alert.alert('刪除失敗',error.message);else await load()}
+ async function saveAdj(){if(!editAdj)return;const n=Number(editAmount);if(!Number.isFinite(n))return Alert.alert('金額錯誤');setBusy(editAdj.id);const {error}=await supabase.from('ledger').update({amount:n,description:editDesc.trim()||null}).eq('id',editAdj.id);setBusy('');if(error)Alert.alert('更新失敗',error.message);else{setEditAdj(null);await load()}}
+ async function delAdj(x:any){if(Platform.OS==='web'&&typeof window!=='undefined'&&!window.confirm('確定刪除這筆帳務調整？'))return;setBusy(x.id);const {error}=await supabase.from('ledger').delete().eq('id',x.id);setBusy('');if(error)Alert.alert('刪除失敗',error.message);else await load()}
+ const title=isPlayer?'我的訂單':status==='in_progress'?'進行中訂單':status==='completed'&&days==='14'?'近 2 週已結單':'所有訂單'
+ return <Screen><H1>{title}</H1><Muted>{isPlayer?'訂單與其他加扣款都會顯示在這裡。':'訂單與打手帳務調整統一在這裡查看。'}</Muted>{loading?<ActivityIndicator color={colors.accent}/>:<FlatList data={orders} keyExtractor={x=>isPlayer?x.id:x.id} contentContainerStyle={{gap:10,paddingBottom:24}} ListEmptyComponent={<Muted>目前沒有訂單。</Muted>} renderItem={({item})=>isPlayer?<PlayerOrder x={item} completionId={completionId} setCompletionId={setCompletionId} completeDate={completeDate} setCompleteDate={setCompleteDate} complete={complete} busy={busy}/>:<StaffOrder x={item} canEdit={canEdit} delOrder={delOrder} busy={busy}/>} ListFooterComponent={<View style={{gap:10,paddingTop:10}}><H2>其他加扣款</H2>{adjustments.length===0?<Muted>目前沒有其他加扣款。</Muted>:adjustments.map(x=><Card key={x.id}><View style={s.between}><View style={{flex:1}}><Text style={s.kind}>{x.players?.display_name?x.players.display_name+' · ':''}{x.description||typeText(x.type)}</Text><Muted>{day(x.occurred_at)} · {typeText(x.type)}</Muted></View><Text style={[s.pay,Number(x.amount)<0&&s.neg]}>{Number(x.amount)>0?'+':''}{money(x.amount)}</Text></View>{canEdit?<><Button title="更改" tone="neutral" onPress={()=>{setEditAdj(x);setEditAmount(String(x.amount));setEditDesc(x.description||'')}}/><Button title={busy===x.id?'刪除中…':'刪除'} tone="danger" onPress={()=>delAdj(x)} disabled={busy===x.id}/></>:null}{editAdj?.id===x.id?<View style={s.edit}><Field value={editAmount} onChangeText={setEditAmount} placeholder="金額（扣款用負數）" keyboardType="numbers-and-punctuation"/><Field value={editDesc} onChangeText={setEditDesc} placeholder="說明"/><Button title="儲存更改" onPress={saveAdj}/><Button title="取消" tone="neutral" onPress={()=>setEditAdj(null)}/></View>:null}</Card>)}</View>}/>}</Screen>
 }
-
-type AssignmentRow = {
-  id: string
-  order_id: string
-  status: string
-  assigned_pay: number
-  games_played: number
-  extracts: number
-  is_active_slot: boolean
-  orders: {
-    id: string
-    order_no: string
-    amount_paid: number
-    status: string
-    created_at: string
-  } | null
-}
-
-export default function OrdersScreen() {
-  const { profile } = useAuth()
-  const { status, days } = useLocalSearchParams<{ status?: string; days?: string }>()
-  const isPlayer = profile?.role === 'player'
-  const [rows, setRows] = useState<OrderRow[]>([])
-  const [assignments, setAssignments] = useState<AssignmentRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [completionId, setCompletionId] = useState<string | null>(null)
-  const [completeDate, setCompleteDate] = useState(todayLocal())
-
-  const load = useCallback(async () => {
-    setLoading(true)
-
-    if (isPlayer) {
-      const { data: player, error: playerError } = await supabase
-        .from('players')
-        .select('id')
-        .eq('profile_id', profile?.id)
-        .maybeSingle()
-
-      if (playerError) {
-        Alert.alert('讀取失敗', playerError.message)
-        setLoading(false)
-        return
-      }
-      if (!player) {
-        setAssignments([])
-        setLoading(false)
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('order_players')
-        .select('id, order_id, status, assigned_pay, games_played, extracts, is_active_slot, orders(id, order_no, amount_paid, status, created_at)')
-        .eq('player_id', player.id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (error) Alert.alert('讀取訂單失敗', error.message)
-      else setAssignments((data ?? []) as unknown as AssignmentRow[])
-    } else {
-      let query = supabase.from('orders').select('id, order_no, amount_paid, status, created_at').order('created_at', { ascending: false }).limit(50)
-      if (status) query = query.eq('status', status)
-      if (status === 'completed' && days === '14') query = query.gte('completed_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
-      const { data, error } = await query
-
-      if (error) Alert.alert('讀取訂單失敗', error.message)
-      else setRows((data ?? []) as OrderRow[])
-    }
-
-    setLoading(false)
-  }, [isPlayer, profile?.id, status, days])
-
-  useFocusEffect(useCallback(() => { load() }, [load]))
-
-  async function deleteOrder(item: OrderRow) {
-    if (busyId) return
-    if (Platform.OS === 'web') {
-      const ok = typeof window !== 'undefined' ? window.confirm(`確定要刪除訂單 ${item.order_no}？\n\n刪除後無法復原。`) : false
-      if (!ok) return
-    }
-    setBusyId(item.id)
-    const { error } = await supabase.rpc('delete_t1_order', { p_order_id: item.id })
-    setBusyId(null)
-    if (error) {
-      Alert.alert('刪除失敗', error.message)
-      return
-    }
-    Alert.alert('已刪除', item.order_no)
-    await load()
-  }
-
-  async function completeOrder(item: AssignmentRow) {
-    if (!item.is_active_slot) return
-    if (!completeDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
-      return
-    }
-    setBusyId(item.id)
-    const { error } = await supabase.rpc('complete_t1_order', {
-      p_order_id: item.order_id,
-      p_completed_date: completeDate
-    })
-    setBusyId(null)
-    if (error) Alert.alert('結單失敗', error.message)
-    else {
-      setCompletionId(null)
-      setCompleteDate(todayLocal())
-      Alert.alert('結單完成', item.orders?.order_no ?? '')
-      await load()
-    }
-  }
-
-  return (
-    <Screen>
-      <H1>{isPlayer ? '我的訂單' : status === 'in_progress' ? '進行中訂單' : status === 'completed' && days === '14' ? '近 2 週已結單' : '所有訂單'}</H1>
-      <Muted>
-        {isPlayer
-          ? '目前現役打手可以直接結整張單；被換下的打手只能查看紀錄。'
-          : 'RLS 會依登入角色自動限制能看到的訂單。'}
-      </Muted>
-
-      {loading ? (
-        <ActivityIndicator color={colors.accent} />
-      ) : isPlayer ? (
-        <FlatList
-          data={assignments}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ gap: 10 }}
-          ListEmptyComponent={<Muted>目前沒有派給你的訂單。</Muted>}
-          renderItem={({ item }) => (
-            <Card>
-              <Text style={styles.orderNo}>{item.orders?.order_no ?? '訂單'}</Text>
-              <Text style={styles.amount}>${Number(item.orders?.amount_paid ?? 0).toLocaleString()}</Text>
-              <View style={styles.infoRow}>
-                <Muted>狀態：{statusText(item.status)}</Muted>
-                <Muted>預計分成：${Number(item.assigned_pay ?? 0).toLocaleString()}</Muted>
-              </View>
-              {item.is_active_slot && item.orders?.status !== 'completed' && completionId !== item.id ? (
-                <Button
-                  title="開始結單"
-                  tone="neutral"
-                  onPress={() => {
-                    setCompletionId(item.id)
-                    setCompleteDate(todayLocal())
-                  }}
-                />
-              ) : null}
-
-              {completionId === item.id ? (
-                <View style={styles.completeBox}>
-                  <H2>結單資料</H2>
-                  <Field value={completeDate} onChangeText={setCompleteDate} placeholder="YYYY-MM-DD" />
-                  <Muted>只有目前仍在做這張單的打手可以結單。送出後會一次完成整張訂單，日期預設今天。</Muted>
-                  <Button
-                    title={busyId === item.id ? '送出中…' : '確認結單'}
-                    onPress={() => completeOrder(item)}
-                    disabled={busyId === item.id}
-                  />
-                  <Button
-                    title="取消"
-                    tone="neutral"
-                    onPress={() => {
-                      setCompletionId(null)
-                      setCompleteDate(todayLocal())
-                    }}
-                  />
-                </View>
-              ) : null}
-
-              {item.status === 'completed' ? (
-                <Muted>已完成</Muted>
-              ) : null}
-
-              {!item.is_active_slot && item.status !== 'completed' ? (
-                <Muted>已換人 · 此打手不能結單</Muted>
-              ) : null}
-            </Card>
-          )}
-        />
-      ) : (
-        <FlatList
-          data={rows}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ gap: 10 }}
-          ListEmptyComponent={<Muted>目前沒有可顯示的訂單。</Muted>}
-          renderItem={({ item }) => (
-            <Pressable onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id, orderNo: item.order_no } })}>
-            <Card>
-              <Text style={styles.orderNo}>{item.order_no}</Text>
-              <Text style={styles.amount}>${Number(item.amount_paid).toLocaleString()}</Text>
-              <Muted>{statusText(item.status)} · 點擊查看打手／換人</Muted>
-              {(profile?.role === 'staff' || profile?.role === 'admin') ? (
-                <Button title={busyId === item.id ? '刪除中…' : '刪除訂單'} tone="danger" onPress={() => deleteOrder(item)} disabled={busyId === item.id} />
-              ) : null}
-            </Card>
-            </Pressable>
-          )}
-        />
-      )}
-    </Screen>
-  )
-}
-
-function statusText(status: string) {
-  const labels: Record<string, string> = {
-    draft: '草稿',
-    awaiting_player: '等待打手',
-    assigned: '待接單',
-    accepted: '已接單',
-    in_progress: '進行中',
-    completed: '已完成',
-    cancelled: '已取消',
-    refunded: '已退款'
-  }
-  return labels[status] ?? status
-}
-
-const styles = StyleSheet.create({
-  orderNo: { color: colors.text, fontWeight: '800', fontSize: 17 },
-  amount: { color: colors.accent, fontWeight: '800', fontSize: 22 },
-  infoRow: { gap: 4 },
-  completeBox: {
-    gap: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border
-  }
-})
-
-function todayLocal(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function PlayerOrder({x,completionId,setCompletionId,completeDate,setCompleteDate,complete,busy}:any){const o=x.orders||{},n=note(o.notes),active=x.is_active_slot&&o.status!=='completed';return <Pressable onPress={()=>router.push({pathname:'/order-detail',params:{orderId:o.id,orderNo:o.order_no}})}><Card><Text style={s.orderNo}>{o.order_no}</Text><View style={s.between}><Text style={s.category}>{n.service_category||'訂單'}</Text><Text style={s.pay}>實拿 {money(x.final_pay??x.calculated_pay??x.assigned_pay)}</Text></View><Muted>{n.detail||'—'}</Muted><View style={s.meta}><Muted>接單：{day(o.started_at||x.created_at)}</Muted><Muted>結單：{day(o.completed_at||x.completed_at)}</Muted><Muted>狀態：{statusText(o.status)}</Muted></View>{active&&completionId!==x.id?<Button title="結單" tone="neutral" onPress={()=>setCompletionId(x.id)}/>:null}{completionId===x.id?<View style={s.edit}><H2>選擇結單日期</H2><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:7}}>{dates().map(d=><Pressable key={d} onPress={()=>setCompleteDate(d)} style={[s.dateChip,completeDate===d&&s.dateActive]}><Text style={s.dateText}>{d.slice(5)}</Text></Pressable>)}</ScrollView><Muted>目前選擇：{completeDate}</Muted><Button title={busy===x.id?'結單中…':'確認結單'} onPress={()=>complete(x)} disabled={busy===x.id}/><Button title="取消" tone="neutral" onPress={()=>setCompletionId(null)}/></View>:null}</Card></Pressable>}
+function StaffOrder({x,canEdit,delOrder,busy}:any){const n=note(x.notes);return <Pressable onPress={()=>router.push({pathname:'/order-detail',params:{orderId:x.id,orderNo:x.order_no}})}><Card><Text style={s.orderNo}>{x.order_no}</Text><View style={s.between}><Text style={s.category}>{n.service_category||'訂單'}</Text><Text style={s.pay}>{money(x.amount_paid)}</Text></View><Muted>{n.detail||'—'}</Muted><Muted>報單：{day(x.created_at)} · 結單：{day(x.completed_at)} · {statusText(x.status)}</Muted>{(x.order_players??[]).map((p:any)=><Muted key={p.id}>{p.players?.display_name||'打手'} · 實拿 {money(p.final_pay??p.assigned_pay)}</Muted>)}{canEdit?<Button title={busy===x.id?'刪除中…':'刪除訂單'} tone="danger" onPress={()=>delOrder(x)} disabled={busy===x.id}/>:null}</Card></Pressable>}
+function typeText(t:string){return({rental:'租號',compensation:'賠付',penalty:'罰錢',deposit:'扣押金',advance:'預支',bonus:'加雞腿',other:'其他'} as any)[t]||t}
+const s=StyleSheet.create({orderNo:{color:colors.muted,fontSize:12,fontWeight:'700'},category:{color:colors.text,fontSize:18,fontWeight:'900'},pay:{color:colors.accent,fontSize:17,fontWeight:'900'},neg:{color:'#ff8f8f'},between:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10},meta:{gap:2,marginTop:5},kind:{color:colors.text,fontWeight:'800'},edit:{gap:9,borderTopWidth:1,borderTopColor:colors.border,paddingTop:10,marginTop:8},dateChip:{borderWidth:1,borderColor:colors.border,borderRadius:999,paddingHorizontal:11,paddingVertical:8},dateActive:{borderColor:colors.accent,backgroundColor:colors.panel2},dateText:{color:colors.text,fontWeight:'700'}})
