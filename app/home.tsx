@@ -6,13 +6,12 @@ import { Button, Card, H1, H2, Muted, Screen, colors } from '@/components/ui'
 import { useAuth } from '@/providers/AuthProvider'
 import { supabase } from '@/lib/supabase'
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card style={styles.stat}>
+function Stat({ label, value, onPress }: { label: string; value: string; onPress?: () => void }) {
+  const content = <Card style={styles.stat}>
       <Muted>{label}</Muted>
       <Text style={styles.statValue}>{value}</Text>
     </Card>
-  )
+  return onPress ? <Text onPress={onPress} style={styles.statPress}>{content}</Text> : content
 }
 
 export default function HomeScreen() {
@@ -72,7 +71,7 @@ export default function HomeScreen() {
         {(role === 'staff' || role === 'admin') && (
           <>
             <View style={styles.row}>
-              <Stat label="進行中訂單" value={String(inProgress)} />
+              <Stat label="進行中訂單" value={String(inProgress)} onPress={() => router.push({ pathname: '/orders', params: { status: 'in_progress' } })} />
               <Stat label="待結單" value={String(readyToClose)} />
             </View>
             <Card>
@@ -114,6 +113,7 @@ const styles = StyleSheet.create({
   stat: {
     flex: 1
   },
+  statPress: { flex: 1 },
   statValue: {
     color: colors.text,
     fontSize: 24,
