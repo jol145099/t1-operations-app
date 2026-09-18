@@ -90,6 +90,19 @@ export default function OrdersScreen() {
     load()
   }, [load])
 
+  async function deleteOrder(item: OrderRow) {
+    Alert.alert('刪除訂單', `確定要刪除 ${item.order_no}？刪除後無法復原。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '刪除', style: 'destructive', onPress: async () => {
+        setBusyId(item.id)
+        const { error } = await supabase.from('orders').delete().eq('id', item.id)
+        setBusyId(null)
+        if (error) Alert.alert('刪除失敗', error.message)
+        else await load()
+      }}
+    ])
+  }
+
   async function acceptAssignment(item: AssignmentRow) {
     setBusyId(item.id)
     const now = new Date().toISOString()
@@ -262,6 +275,9 @@ export default function OrdersScreen() {
               <Text style={styles.orderNo}>{item.order_no}</Text>
               <Text style={styles.amount}>${Number(item.amount_paid).toLocaleString()}</Text>
               <Muted>{statusText(item.status)} · 點擊查看打手／換人</Muted>
+              {(profile?.role === 'staff' || profile?.role === 'admin') ? (
+                <Button title={busyId === item.id ? '刪除中…' : '刪除訂單'} tone="danger" onPress={() => deleteOrder(item)} disabled={busyId === item.id} />
+              ) : null}
             </Card>
             </Pressable>
           )}
