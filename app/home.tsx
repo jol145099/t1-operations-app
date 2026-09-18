@@ -19,10 +19,16 @@ export default function HomeScreen() {
   const role = profile?.role
   const [inProgress, setInProgress] = useState(0)
   const [completedTwoWeeks, setCompletedTwoWeeks] = useState(0)
+  const [playerStats,setPlayerStats]=useState({inProgress:0,completed:0,orderPay:0,payable:0})
 
   useFocusEffect(useCallback(() => {
-    if (role !== 'staff' && role !== 'admin') return
     let alive = true
+    if(role==='player'){
+      ;(async()=>{const {data:p}=await supabase.from('players').select('id').eq('profile_id',profile?.id).maybeSingle();if(!p)return;const period=currentPeriod();const [a,l,s]=await Promise.all([supabase.from('order_players').select('status,final_pay,calculated_pay,assigned_pay,orders!inner(status,completed_at)').eq('player_id',p.id),supabase.from('ledger').select('amount').eq('player_id',p.id).gte('occurred_at',period.start).lt('occurred_at',period.next),supabase.from('settlements').select('carry_in,total_payable').eq('player_id',p.id).eq('period_start',period.start.slice(0,10)).eq('period_end',period.end).maybeSingle()]);const rows=(a.data??[]) as any[];const completedRows=rows.filter(x=>x.orders?.status==='completed'&&x.orders?.completed_at>=period.start&&x.orders?.completed_at<period.next);const orderPay=completedRows.reduce((n,x)=>n+Number(x.final_pay??x.calculated_pay??x.assigned_pay??0),0);const adj=(l.data??[]).reduce((n:any,x:any)=>n+Number(x.amount||0),0);const carry=Number(s.data?.carry_in||0);if(alive)setPlayerStats({inProgress:rows.filter(x=>x.orders?.status==='in_progress'&&x.status!=='cancelled').length,completed:completedRows.length,orderPay,payable:s.data?Number(s.data.total_payable||0):orderPay+adj+carry})})()
+      return()=>{alive=false}
+    }
+    if (role !== 'staff' && role !== 'admin') return
+
     ;(async () => {
       const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
       const [{ count: progress }, { count: completed }] = await Promise.all([
@@ -32,7 +38,7 @@ export default function HomeScreen() {
       if (alive) { setInProgress(progress ?? 0); setCompletedTwoWeeks(completed ?? 0) }
     })()
     return () => { alive = false }
-  }, [role]))
+  }, [role,profile?.id]))
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }}>
@@ -58,8 +64,12 @@ export default function HomeScreen() {
         {role === 'player' && (
           <>
             <View style={styles.row}>
-              <Stat label="本期完單" value="$0" />
-              <Stat label="目前應付" value="$0" />
+              <Stat label="進行中單數" value={String(playerStats.inProgress)} onPress={() => router.push({pathname:'/orders',params:{status:'in_progress'}})} />
+              <Stat label="這期結單數" value={String(playerStats.completed)} onPress={() => router.push({pathname:'/orders',params:{status:'completed'}})} />
+            </View>
+            <View style={styles.row}>
+              <Stat label="本期完單" value={`${Math.ceil(playerStats.orderPay).toLocaleString()}`} />
+              <Stat label="目前應付" value={`${Math.ceil(playerStats.payable).toLocaleString()}`} />
             </View>
             <Card>
               <H2>打手中心</H2>
@@ -124,3 +134,5 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   }
 })
+
+function currentPeriod(){const n=new Date(),y=n.getFullYear(),m=n.getMonth(),d=n.getDate();let s:Date,e:Date,x:Date;if(d===1){s=new Date(y,m-1,16);e=new Date(y,m,1);x=new Date(y,m,2)}else if(d<=15){s=new Date(y,m,2);e=new Date(y,m,15);x=new Date(y,m,16)}else{s=new Date(y,m,16);e=new Date(y,m+1,1);x=new Date(y,m+1,2)}const iso=(z:Date)=>{const yy=z.getFullYear(),mm=String(z.getMonth()+1).padStart(2,'0'),dd=String(z.getDate()).padStart(2,'0');return `${yy}-${mm}-${dd}`};return{start:iso(s)+'T00:00:00',end:iso(e),next:iso(x)+'T00:00:00'}}
