@@ -10,7 +10,7 @@ export default function OrderDetailScreen(){
  const {orderId,orderNo}=useLocalSearchParams<{orderId:string;orderNo:string}>()
  const canEdit=profile?.role==='staff'||profile?.role==='admin'
  const [rows,setRows]=useState<any[]>([]),[players,setPlayers]=useState<any[]>([]),[order,setOrder]=useState<any>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
- const [replaceId,setReplaceId]=useState<string|null>(null),[newPlayerId,setNewPlayerId]=useState(''),[playerQuery,setPlayerQuery]=useState(''),[finalPay,setFinalPay]=useState(''),[newFinalPay,setNewFinalPay]=useState(''),[reason,setReason]=useState(''),[completeDate,setCompleteDate]=useState(todayLocal())
+ const [calendarOpen,setCalendarOpen]=useState(false),[replaceId,setReplaceId]=useState<string|null>(null),[newPlayerId,setNewPlayerId]=useState(''),[playerQuery,setPlayerQuery]=useState(''),[finalPay,setFinalPay]=useState(''),[newFinalPay,setNewFinalPay]=useState(''),[reason,setReason]=useState(''),[completeDate,setCompleteDate]=useState(todayLocal())
 
  const load=useCallback(async()=>{
   if(!orderId)return;setLoading(true)
@@ -25,7 +25,7 @@ export default function OrderDetailScreen(){
  },[orderId])
  useEffect(()=>{load()},[load])
 
- function beginReplace(r:any){setReplaceId(r.id);setNewPlayerId('');setPlayerQuery('');setFinalPay(String(Number(r.final_pay??r.assigned_pay??0)));setNewFinalPay('');setReason('')}
+ function beginReplace(r:any){setReplaceId(r.id);setNewPlayerId('');setPlayerQuery('');setFinalPay(String(displayPay(r)));setNewFinalPay('');setReason('')}
 
  async function replacePlayer(){
   const old=rows.find(x=>x.id===replaceId); if(!old||!newPlayerId)return
@@ -59,23 +59,23 @@ export default function OrderDetailScreen(){
  return <Screen><H1>{orderNo||'訂單詳情'}</H1><Muted>換人會保留「誰換誰」與原打手實拿／賠付紀錄。</Muted>
   {order?<Card><View style={styles.row}><H2>訂單狀態</H2><Text style={order.status==='completed'?styles.active:styles.name}>{order.status==='completed'?'已完成':'進行中'}</Text></View>{canEdit?<Muted>訂單金額：$ {Number(order.amount_paid||0).toLocaleString()}</Muted>:null}{order.notes?<Muted>{orderSummary(order.notes)}</Muted>:null}<Muted>接單日期：{String(order.started_at||order.created_at).slice(0,10)}</Muted>{order.status==='completed'&&order.completed_at?<Muted>結單日期：{String(order.completed_at).slice(0,10)}</Muted>:null}</Card>:null}
   {loading?<ActivityIndicator color={colors.accent}/>:<FlatList data={rows} keyExtractor={x=>x.id} contentContainerStyle={{gap:12,paddingBottom:30}}
-   renderItem={({item})=><PlayerCard item={item} canEdit={canEdit} busy={busy} replacing={replaceId===item.id} players={players} rows={rows}
+   renderItem={({item})=><PlayerCard item={item} orderStatus={order?.status} canEdit={canEdit} busy={busy} replacing={replaceId===item.id} players={players} rows={rows}
     newPlayerId={newPlayerId} setNewPlayerId={setNewPlayerId} playerQuery={playerQuery} setPlayerQuery={setPlayerQuery} finalPay={finalPay} setFinalPay={setFinalPay} newFinalPay={newFinalPay} setNewFinalPay={setNewFinalPay} reason={reason} setReason={setReason}
     beginReplace={()=>beginReplace(item)} cancelReplace={()=>setReplaceId(null)} replacePlayer={replacePlayer} savePay={savePay}/>}
-   ListFooterComponent={canEdit&&order?.status!=='completed'?<Card><H2>客服／店長結單</H2><Muted>選擇實際結單日期。</Muted><CalendarPicker value={completeDate} onChange={setCompleteDate}/><Muted>結單日期：{completeDate}</Muted><Button title={busy?'結單中…':'完成整張訂單'} onPress={completeOrder} disabled={busy}/></Card>:null}
+   ListFooterComponent={canEdit&&order?.status!=='completed'?<Card><H2>客服／店長結單</H2><Muted>選擇實際結單日期。</Muted><Pressable onPress={()=>setCalendarOpen(v=>!v)} style={styles.dateButton}><Text style={styles.dateButtonText}>📅 {completeDate}</Text></Pressable>{calendarOpen?<View style={styles.calendarPopup}><CalendarPicker value={completeDate} onChange={(d)=>{setCompleteDate(d);setCalendarOpen(false)}}/></View>:null}<Button title={busy?'結單中…':'完成整張訂單'} onPress={completeOrder} disabled={busy}/></Card>:null}
   />}
  </Screen>
 }
 
 function PlayerCard(p:any){
  const r=p.item
- const [pay,setPay]=useState(String(Number(r.final_pay??r.assigned_pay??0)))
+ const [pay,setPay]=useState(String(displayPay(r)))
  const replacement=p.rows.find((x:any)=>x.id===r.replaced_by_assignment_id)
  return <Card>
-  <View style={styles.row}><Text style={styles.name}>{r.players?.display_name??'打手'}</Text><Text style={r.is_active_slot?styles.active:styles.replaced}>{r.is_active_slot?(r.status==='completed'?'已完成':'進行中'):'已換人'}</Text></View>
+  <View style={styles.row}><Text style={styles.name}>{r.players?.display_name??'打手'}</Text><Text style={r.is_active_slot?styles.active:styles.replaced}>{r.is_active_slot?(p.orderStatus==='completed'||r.status==='completed'?'已完成':'進行中'):'已換人'}</Text></View>
   {!r.is_active_slot&&replacement?<Muted>換成：{replacement.players?.display_name??'新打手'}</Muted>:null}
   {r.replacement_reason?<Muted>原因：{r.replacement_reason}</Muted>:null}
-  <Muted>實拿金額：$ {Number(r.final_pay??r.assigned_pay??0).toLocaleString()}（負數＝賠付）</Muted>
+  <Muted>實拿金額：$ {displayPay(r).toLocaleString()}（負數＝賠付）</Muted>
   {p.canEdit&&!p.replacing?<><Field value={pay} onChangeText={setPay} placeholder="實拿／賠付金額（賠付輸入負數）" keyboardType="numbers-and-punctuation"/>
    <Button title="更新實拿金額" tone="neutral" onPress={()=>p.savePay(r,pay)} disabled={p.busy}/>
    {r.is_active_slot?<Button title="換人" tone="danger" onPress={p.beginReplace} disabled={p.busy}/>:null}</>:null}
@@ -91,9 +91,10 @@ function Chip({label,active,onPress}:{label:string;active:boolean;onPress:()=>vo
 const styles=StyleSheet.create({
  row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10},name:{color:colors.text,fontSize:18,fontWeight:'800'},active:{color:colors.success,fontWeight:'800'},replaced:{color:colors.muted,fontWeight:'800'},
  box:{gap:10,borderTopWidth:1,borderTopColor:colors.border,paddingTop:10},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{borderWidth:1,borderColor:colors.border,backgroundColor:colors.panel2,paddingHorizontal:12,paddingVertical:9,borderRadius:999},
- chipActive:{backgroundColor:colors.accent,borderColor:colors.accent},chipText:{color:colors.text,fontWeight:'700'},chipTextActive:{color:'#051018'},calendar:{gap:8,padding:8,borderWidth:1,borderColor:colors.border,borderRadius:14},calHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},calNav:{color:colors.accent,fontSize:30,fontWeight:'900',paddingHorizontal:12},calTitle:{color:colors.text,fontWeight:'900',fontSize:17},week:{flexDirection:'row'},weekText:{width:'14.285%',textAlign:'center',color:colors.muted,fontWeight:'700'},grid:{flexDirection:'row',flexWrap:'wrap'},day:{width:'14.285%',height:40,alignItems:'center',justifyContent:'center',borderRadius:20},dayActive:{backgroundColor:colors.accent},dayText:{color:colors.text,fontWeight:'700'}
+ chipActive:{backgroundColor:colors.accent,borderColor:colors.accent},chipText:{color:colors.text,fontWeight:'700'},chipTextActive:{color:'#051018'},calendar:{gap:8,padding:8,borderWidth:1,borderColor:colors.border,borderRadius:14},calHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},calNav:{color:colors.accent,fontSize:30,fontWeight:'900',paddingHorizontal:12},calTitle:{color:colors.text,fontWeight:'900',fontSize:17},week:{flexDirection:'row'},weekText:{width:'14.285%',textAlign:'center',color:colors.muted,fontWeight:'700'},grid:{flexDirection:'row',flexWrap:'wrap'},day:{width:'14.285%',height:40,alignItems:'center',justifyContent:'center',borderRadius:20},dayActive:{backgroundColor:colors.accent},dayText:{color:colors.text,fontWeight:'700'},dateButton:{alignSelf:'flex-start',borderWidth:1,borderColor:colors.border,borderRadius:10,paddingHorizontal:12,paddingVertical:9,backgroundColor:colors.panel2},dateButtonText:{color:colors.text,fontWeight:'800'},calendarPopup:{maxWidth:330,width:'100%',alignSelf:'flex-start'}
 })
 
+function displayPay(r:any){const final=Number(r.final_pay||0),assigned=Number(r.assigned_pay||0);return final!==0?final:assigned}
 function CalendarPicker({value,onChange}:{value:string;onChange:(v:string)=>void}){const selected=new Date(value+'T12:00:00'),[view,setView]=useState(new Date(selected.getFullYear(),selected.getMonth(),1));const y=view.getFullYear(),m=view.getMonth(),first=new Date(y,m,1).getDay(),count=new Date(y,m+1,0).getDate(),cells=[...Array(first).fill(null),...Array.from({length:count},(_,i)=>i+1)];const pick=(d:number)=>onChange(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`);return <View style={styles.calendar}><View style={styles.calHead}><Pressable onPress={()=>setView(new Date(y,m-1,1))}><Text style={styles.calNav}>‹</Text></Pressable><Text style={styles.calTitle}>{y} 年 {m+1} 月</Text><Pressable onPress={()=>setView(new Date(y,m+1,1))}><Text style={styles.calNav}>›</Text></Pressable></View><View style={styles.week}>{['日','一','二','三','四','五','六'].map(w=><Text key={w} style={styles.weekText}>{w}</Text>)}</View><View style={styles.grid}>{cells.map((d,i)=>d?<Pressable key={i} onPress={()=>pick(d)} style={[styles.day,value===`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`&&styles.dayActive]}><Text style={styles.dayText}>{d}</Text></Pressable>:<View key={i} style={styles.day}/>)}</View></View>}
 
 function todayLocal(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
