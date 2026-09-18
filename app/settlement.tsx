@@ -43,7 +43,7 @@ export default function SettlementScreen() {
     if (profile.role === 'player') playerQuery = playerQuery.eq('profile_id', profile.id)
     const [p, a, l, d, s] = await Promise.all([
       playerQuery,
-      supabase.from('order_players').select('player_id, assigned_pay, calculated_pay, final_pay').eq('status', 'completed').gte('completed_at', isoStart(period.start)).lt('completed_at', isoStart(period.nextExclusive)),
+      supabase.from('order_players').select('player_id, assigned_pay, calculated_pay, final_pay, orders!inner(status, completed_at)').eq('orders.status', 'completed').gte('orders.completed_at', isoStart(period.start)).lt('orders.completed_at', isoStart(period.nextExclusive)),
       supabase.from('ledger').select('player_id, amount').gte('occurred_at', isoStart(period.start)).lt('occurred_at', isoStart(period.nextExclusive)),
       supabase.from('orders').select('dispatcher_id, dispatch_fee').eq('status', 'completed').gte('completed_at', isoStart(period.start)).lt('completed_at', isoStart(period.nextExclusive)),
       supabase.from('settlements').select('id, player_id, order_pay, dispatch_pay, adjustments, total_payable, payment_status, amount_paid, paid_at').eq('period_start', dateOnly(period.start)).eq('period_end', dateOnly(period.end))
