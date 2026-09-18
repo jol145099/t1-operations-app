@@ -48,7 +48,8 @@ export default function HomeScreen() {
             <Card>
               <H2>老闆中心</H2>
               <Muted>查看自己的消費紀錄、VIP 等級、VIP 福利與儲值金。</Muted>
-              <Button title="查看消費紀錄" onPress={() => router.push('/orders')} />
+              <Button title="瀏覽打手" onPress={() => router.push('/player-preview')} />
+              <Button title="查看消費紀錄" onPress={() => router.push('/orders')} tone="neutral" />
             </Card>
           </>
         )}
@@ -78,6 +79,8 @@ export default function HomeScreen() {
               <H2>營運中心</H2>
               <Muted>客服與店長可以報單、派單、記錄租號/賠付/預支，以及查看結算。</Muted>
               <Button title="＋ 新增報單" onPress={() => router.push('/new-order')} />
+              {role === 'admin' ? <Button title="打手管理" onPress={() => router.push('/player-management')} tone="neutral" /> : null}
+              <Button title="打手預覽" onPress={() => router.push('/player-preview')} tone="neutral" />
               <Button title="打手帳務調整" onPress={() => router.push('/adjustments')} tone="neutral" />
               <Button title="所有訂單" onPress={() => router.push('/orders')} tone="neutral" />
               <Button title="兩週結算" onPress={() => router.push('/settlement')} tone="neutral" />
