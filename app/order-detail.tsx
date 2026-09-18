@@ -10,13 +10,13 @@ export default function OrderDetailScreen(){
  const {orderId,orderNo}=useLocalSearchParams<{orderId:string;orderNo:string}>()
  const canEdit=profile?.role==='staff'||profile?.role==='admin'
  const [rows,setRows]=useState<any[]>([]),[players,setPlayers]=useState<any[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
- const [replaceId,setReplaceId]=useState<string|null>(null),[newPlayerId,setNewPlayerId]=useState(''),[finalPay,setFinalPay]=useState(''),[comp,setComp]=useState(''),[reason,setReason]=useState('')
+ const [replaceId,setReplaceId]=useState<string|null>(null),[newPlayerId,setNewPlayerId]=useState(''),[playerQuery,setPlayerQuery]=useState(''),[finalPay,setFinalPay]=useState(''),[comp,setComp]=useState(''),[reason,setReason]=useState('')
 
  const load=useCallback(async()=>{
   if(!orderId)return;setLoading(true)
   const [a,p]=await Promise.all([
    supabase.from('order_players').select('id, player_id, status, assigned_pay, final_pay, compensation_amount, is_active_slot, replaced_by_assignment_id, replacement_reason, replaced_at, players(display_name)').eq('order_id',orderId).order('created_at'),
-   supabase.from('players').select('id, display_name').eq('active',true).order('display_name')
+   supabase.from('players').select('id, display_name').order('display_name')
   ])
   if(a.error||p.error)Alert.alert('讀取失敗',a.error?.message||p.error?.message||'')
   else{setRows(a.data??[]);setPlayers(p.data??[])}
@@ -24,7 +24,7 @@ export default function OrderDetailScreen(){
  },[orderId])
  useEffect(()=>{load()},[load])
 
- function beginReplace(r:any){setReplaceId(r.id);setNewPlayerId('');setFinalPay(String(Number(r.final_pay||r.assigned_pay||0)));setComp(String(Number(r.compensation_amount||0)));setReason('')}
+ function beginReplace(r:any){setReplaceId(r.id);setNewPlayerId('');setPlayerQuery('');setFinalPay(String(Number(r.final_pay||r.assigned_pay||0)));setComp(String(Number(r.compensation_amount||0)));setReason('')}
 
  async function replacePlayer(){
   const old=rows.find(x=>x.id===replaceId); if(!old||!newPlayerId)return
@@ -57,7 +57,7 @@ export default function OrderDetailScreen(){
  return <Screen><H1>{orderNo||'訂單詳情'}</H1><Muted>現役打手才能結單；換人會保留「誰換誰」與原打手實拿／賠付紀錄。</Muted>
   {loading?<ActivityIndicator color={colors.accent}/>:<FlatList data={rows} keyExtractor={x=>x.id} contentContainerStyle={{gap:12,paddingBottom:30}}
    renderItem={({item})=><PlayerCard item={item} canEdit={canEdit} busy={busy} replacing={replaceId===item.id} players={players} rows={rows}
-    newPlayerId={newPlayerId} setNewPlayerId={setNewPlayerId} finalPay={finalPay} setFinalPay={setFinalPay} comp={comp} setComp={setComp} reason={reason} setReason={setReason}
+    newPlayerId={newPlayerId} setNewPlayerId={setNewPlayerId} playerQuery={playerQuery} setPlayerQuery={setPlayerQuery} finalPay={finalPay} setFinalPay={setFinalPay} comp={comp} setComp={setComp} reason={reason} setReason={setReason}
     beginReplace={()=>beginReplace(item)} cancelReplace={()=>setReplaceId(null)} replacePlayer={replacePlayer} savePay={savePay}/>}
   />}
  </Screen>
@@ -77,7 +77,7 @@ function PlayerCard(p:any){
    <Button title="儲存實拿／賠付" tone="neutral" onPress={()=>p.savePay(r,pay,compensation)} disabled={p.busy}/>
    {r.is_active_slot?<Button title="換人" tone="danger" onPress={p.beginReplace} disabled={p.busy}/>:null}</>:null}
   {p.replacing?<View style={styles.box}><H2>{r.players?.display_name??'打手'} 換成誰？</H2>
-   <View style={styles.chips}>{p.players.filter((x:any)=>!p.rows.some((z:any)=>z.player_id===x.id)).map((x:any)=><Chip key={x.id} label={x.display_name} active={p.newPlayerId===x.id} onPress={()=>p.setNewPlayerId(x.id)}/>)}</View>
+   <Field value={p.playerQuery} onChangeText={p.setPlayerQuery} placeholder="搜尋要換上的打手"/><View style={styles.chips}>{p.players.filter((x:any)=>!p.rows.some((z:any)=>z.player_id===x.id && z.is_active_slot)).filter((x:any)=>!p.playerQuery.trim()||x.display_name.toLowerCase().includes(p.playerQuery.trim().toLowerCase())).map((x:any)=><Chip key={x.id} label={x.display_name} active={p.newPlayerId===x.id} onPress={()=>p.setNewPlayerId(x.id)}/>)}</View>
    <Field value={p.finalPay} onChangeText={p.setFinalPay} placeholder="原打手最後實拿" keyboardType="decimal-pad"/>
    <Field value={p.comp} onChangeText={p.setComp} placeholder="原打手賠付金額" keyboardType="decimal-pad"/>
    <Field value={p.reason} onChangeText={p.setReason} placeholder="換人原因（可不填）"/>
