@@ -1,0 +1,92 @@
+import { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useLocalSearchParams } from 'expo-router'
+import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/providers/AuthProvider'
+
+export default function OrderDetailScreen(){
+ const {profile}=useAuth()
+ const {orderId,orderNo}=useLocalSearchParams<{orderId:string;orderNo:string}>()
+ const canEdit=profile?.role==='staff'||profile?.role==='admin'
+ const [rows,setRows]=useState<any[]>([]),[players,setPlayers]=useState<any[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
+ const [replaceId,setReplaceId]=useState<string|null>(null),[newPlayerId,setNewPlayerId]=useState(''),[finalPay,setFinalPay]=useState(''),[comp,setComp]=useState(''),[reason,setReason]=useState('')
+
+ const load=useCallback(async()=>{
+  if(!orderId)return;setLoading(true)
+  const [a,p]=await Promise.all([
+   supabase.from('order_players').select('id, player_id, status, assigned_pay, final_pay, compensation_amount, is_active_slot, replaced_by_assignment_id, replacement_reason, replaced_at, players(display_name)').eq('order_id',orderId).order('created_at'),
+   supabase.from('players').select('id, display_name').eq('active',true).order('display_name')
+  ])
+  if(a.error||p.error)Alert.alert('讀取失敗',a.error?.message||p.error?.message||'')
+  else{setRows(a.data??[]);setPlayers(p.data??[])}
+  setLoading(false)
+ },[orderId])
+ useEffect(()=>{load()},[load])
+
+ function beginReplace(r:any){setReplaceId(r.id);setNewPlayerId('');setFinalPay(String(Number(r.final_pay||r.assigned_pay||0)));setComp(String(Number(r.compensation_amount||0)));setReason('')}
+
+ async function replacePlayer(){
+  const old=rows.find(x=>x.id===replaceId); if(!old||!newPlayerId)return
+  if(rows.some(x=>x.player_id===newPlayerId)){Alert.alert('不能換人','這位打手已經在這張訂單裡。');return}
+  const pay=Number(finalPay), compensation=Number(comp||0)
+  if(!Number.isFinite(pay)||!Number.isFinite(compensation)){Alert.alert('金額錯誤','請輸入正確的實拿與賠付金額。');return}
+  setBusy(true)
+  const {data:created,error:insertError}=await supabase.from('order_players').insert({
+   order_id:orderId,player_id:newPlayerId,status:'assigned',assigned_pay:0,calculated_pay:0,final_pay:0,is_active_slot:true
+  }).select('id').single()
+  if(insertError){setBusy(false);Alert.alert('換人失敗',insertError.message);return}
+  const {error:updateError}=await supabase.from('order_players').update({
+   is_active_slot:false,status:'cancelled',final_pay:pay,calculated_pay:pay,compensation_amount:compensation,
+   replaced_by_assignment_id:created.id,replacement_reason:reason.trim()||null,replaced_at:new Date().toISOString()
+  }).eq('id',old.id)
+  setBusy(false)
+  if(updateError){Alert.alert('換人失敗',updateError.message);return}
+  setReplaceId(null);await load()
+ }
+
+ async function savePay(r:any,value:string,compValue:string){
+  const pay=Number(value), compensation=Number(compValue||0)
+  if(!Number.isFinite(pay)||!Number.isFinite(compensation)){Alert.alert('金額錯誤','請輸入正確金額。');return}
+  setBusy(true)
+  const {error}=await supabase.from('order_players').update({final_pay:pay,calculated_pay:pay,compensation_amount:compensation}).eq('id',r.id)
+  setBusy(false);if(error)Alert.alert('儲存失敗',error.message);else await load()
+ }
+
+ if(!orderId)return <Screen><H1>訂單詳情</H1><Muted>缺少訂單 ID。</Muted></Screen>
+ return <Screen><H1>{orderNo||'訂單詳情'}</H1><Muted>現役打手才能結單；換人會保留「誰換誰」與原打手實拿／賠付紀錄。</Muted>
+  {loading?<ActivityIndicator color={colors.accent}/>:<FlatList data={rows} keyExtractor={x=>x.id} contentContainerStyle={{gap:12,paddingBottom:30}}
+   renderItem={({item})=><PlayerCard item={item} canEdit={canEdit} busy={busy} replacing={replaceId===item.id} players={players} rows={rows}
+    newPlayerId={newPlayerId} setNewPlayerId={setNewPlayerId} finalPay={finalPay} setFinalPay={setFinalPay} comp={comp} setComp={setComp} reason={reason} setReason={setReason}
+    beginReplace={()=>beginReplace(item)} cancelReplace={()=>setReplaceId(null)} replacePlayer={replacePlayer} savePay={savePay}/>}
+  />}
+ </Screen>
+}
+
+function PlayerCard(p:any){
+ const r=p.item
+ const [pay,setPay]=useState(String(Number(r.final_pay||r.assigned_pay||0)))
+ const [compensation,setCompensation]=useState(String(Number(r.compensation_amount||0)))
+ const replacement=p.rows.find((x:any)=>x.id===r.replaced_by_assignment_id)
+ return <Card>
+  <View style={styles.row}><Text style={styles.name}>{r.players?.display_name??'打手'}</Text><Text style={r.is_active_slot?styles.active:styles.replaced}>{r.is_active_slot?'進行中':'已換人'}</Text></View>
+  {!r.is_active_slot&&replacement?<Muted>換成：{replacement.players?.display_name??'新打手'}</Muted>:null}
+  {r.replacement_reason?<Muted>原因：{r.replacement_reason}</Muted>:null}
+  <Muted>原預計：$ {Number(r.assigned_pay||0).toLocaleString()}</Muted>
+  {p.canEdit&&!p.replacing?<><Field value={pay} onChangeText={setPay} placeholder="實拿金額" keyboardType="decimal-pad"/><Field value={compensation} onChangeText={setCompensation} placeholder="賠付金額（沒有就 0）" keyboardType="decimal-pad"/>
+   <Button title="儲存實拿／賠付" tone="neutral" onPress={()=>p.savePay(r,pay,compensation)} disabled={p.busy}/>
+   {r.is_active_slot?<Button title="換人" tone="danger" onPress={p.beginReplace} disabled={p.busy}/>:null}</>:null}
+  {p.replacing?<View style={styles.box}><H2>{r.players?.display_name??'打手'} 換成誰？</H2>
+   <View style={styles.chips}>{p.players.filter((x:any)=>!p.rows.some((z:any)=>z.player_id===x.id)).map((x:any)=><Chip key={x.id} label={x.display_name} active={p.newPlayerId===x.id} onPress={()=>p.setNewPlayerId(x.id)}/>)}</View>
+   <Field value={p.finalPay} onChangeText={p.setFinalPay} placeholder="原打手最後實拿" keyboardType="decimal-pad"/>
+   <Field value={p.comp} onChangeText={p.setComp} placeholder="原打手賠付金額" keyboardType="decimal-pad"/>
+   <Field value={p.reason} onChangeText={p.setReason} placeholder="換人原因（可不填）"/>
+   <Button title={p.busy?'處理中…':'確認換人'} onPress={p.replacePlayer} disabled={p.busy||!p.newPlayerId}/><Button title="取消" tone="neutral" onPress={p.cancelReplace}/></View>:null}
+ </Card>
+}
+function Chip({label,active,onPress}:{label:string;active:boolean;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.chip,active&&styles.chipActive]}><Text style={[styles.chipText,active&&styles.chipTextActive]}>{label}</Text></Pressable>}
+const styles=StyleSheet.create({
+ row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10},name:{color:colors.text,fontSize:18,fontWeight:'800'},active:{color:colors.success,fontWeight:'800'},replaced:{color:colors.muted,fontWeight:'800'},
+ box:{gap:10,borderTopWidth:1,borderTopColor:colors.border,paddingTop:10},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{borderWidth:1,borderColor:colors.border,backgroundColor:colors.panel2,paddingHorizontal:12,paddingVertical:9,borderRadius:999},
+ chipActive:{backgroundColor:colors.accent,borderColor:colors.accent},chipText:{color:colors.text,fontWeight:'700'},chipTextActive:{color:'#051018'}
+})
