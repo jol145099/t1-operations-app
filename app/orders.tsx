@@ -94,7 +94,7 @@ export default function OrdersScreen() {
       { text: '取消', style: 'cancel' },
       { text: '刪除', style: 'destructive', onPress: async () => {
         setBusyId(item.id)
-        const { error } = await supabase.from('orders').delete().eq('id', item.id)
+        const { error } = await supabase.rpc('delete_t1_order', { p_order_id: item.id })
         setBusyId(null)
         if (error) Alert.alert('刪除失敗', error.message)
         else await load()
