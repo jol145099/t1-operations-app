@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { Button, Card, H1, H2, Muted, Screen, colors } from '@/components/ui'
 import { useAuth } from '@/providers/AuthProvider'
@@ -11,24 +11,25 @@ function Stat({ label, value, onPress }: { label: string; value: string; onPress
       <Muted>{label}</Muted>
       <Text style={styles.statValue}>{value}</Text>
     </Card>
-  return onPress ? <Text onPress={onPress} style={styles.statPress}>{content}</Text> : content
+  return onPress ? <Pressable onPress={onPress} style={styles.statPress}>{content}</Pressable> : content
 }
 
 export default function HomeScreen() {
   const { profile, signOut } = useAuth()
   const role = profile?.role
   const [inProgress, setInProgress] = useState(0)
-  const [readyToClose, setReadyToClose] = useState(0)
+  const [completedTwoWeeks, setCompletedTwoWeeks] = useState(0)
 
   useFocusEffect(useCallback(() => {
     if (role !== 'staff' && role !== 'admin') return
     let alive = true
     ;(async () => {
-      const [{ count: progress }, { count: ready }] = await Promise.all([
+      const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+      const [{ count: progress }, { count: completed }] = await Promise.all([
         supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
-        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'in_progress').not('completed_at', 'is', null)
+        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', since)
       ])
-      if (alive) { setInProgress(progress ?? 0); setReadyToClose(ready ?? 0) }
+      if (alive) { setInProgress(progress ?? 0); setCompletedTwoWeeks(completed ?? 0) }
     })()
     return () => { alive = false }
   }, [role]))
@@ -73,7 +74,7 @@ export default function HomeScreen() {
           <>
             <View style={styles.row}>
               <Stat label="進行中訂單" value={String(inProgress)} onPress={() => router.push({ pathname: '/orders', params: { status: 'in_progress' } })} />
-              <Stat label="待結單" value={String(readyToClose)} />
+              <Stat label="已結單（2週）" value={String(completedTwoWeeks)} onPress={() => router.push({ pathname: '/orders', params: { status: 'completed', days: '14' } })} />
             </View>
             <Card>
               <H2>營運中心</H2>
