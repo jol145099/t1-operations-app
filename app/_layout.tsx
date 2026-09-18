@@ -24,6 +24,8 @@ export default function RootLayout() {
         <Stack.Screen name="settlement" options={{ title: '兩週結算' }} />
         <Stack.Screen name="settlement-detail" options={{ title: '結算明細' }} />
         <Stack.Screen name="order-detail" options={{ title: '進行中訂單詳情' }} />
+        <Stack.Screen name="player-management" options={{ title: '打手管理' }} />
+        <Stack.Screen name="player-preview" options={{ title: '打手預覽' }} />
       </Stack>
     </AuthProvider>
   )
