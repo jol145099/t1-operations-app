@@ -55,7 +55,7 @@ export default function OrderDetailScreen(){
  }
 
  async function completeOrder(){
-  if(!completeDate.match(/^\\d{4}-\\d{2}-\\d{2}$/)){Alert.alert('日期格式錯誤','請使用 YYYY-MM-DD。');return}
+  if(!completeDate.match(/^\d{4}-\d{2}-\d{2}$/)){Alert.alert('日期格式錯誤','請使用 YYYY-MM-DD。');return}
   setBusy(true)
   const {error}=await supabase.rpc('complete_t1_order',{p_order_id:orderId,p_completed_date:completeDate})
   setBusy(false)
