@@ -39,8 +39,7 @@ export default function OrdersScreen() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [completionId, setCompletionId] = useState<string | null>(null)
-  const [games, setGames] = useState('')
-  const [extracts, setExtracts] = useState('')
+  const [completeDate, setCompleteDate] = useState(todayLocal())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,85 +102,25 @@ export default function OrdersScreen() {
     ])
   }
 
-  async function acceptAssignment(item: AssignmentRow) {
+  async function completeOrder(item: AssignmentRow) {
+    if (!item.is_active_slot) return
+    if (!completeDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      Alert.alert('日期格式錯誤', '請使用 YYYY-MM-DD。')
+      return
+    }
     setBusyId(item.id)
-    const now = new Date().toISOString()
-
-    const { error } = await supabase
-      .from('order_players')
-      .update({ status: 'accepted', accepted_at: now })
-      .eq('id', item.id)
-
-    if (error) {
-      setBusyId(null)
-      Alert.alert('接單失敗', error.message)
-      return
-    }
-
-    await supabase
-      .from('orders')
-      .update({ status: 'in_progress', started_at: now })
-      .eq('id', item.order_id)
-      .eq('status', 'awaiting_player')
-
+    const { error } = await supabase.rpc('complete_t1_order', {
+      p_order_id: item.order_id,
+      p_completed_date: completeDate
+    })
     setBusyId(null)
-    await load()
-  }
-
-  async function completeAssignment(item: AssignmentRow) {
-    const gamesNumber = Number(games)
-    const extractsNumber = Number(extracts)
-
-    if (!Number.isInteger(gamesNumber) || gamesNumber < 0 || !Number.isInteger(extractsNumber) || extractsNumber < 0) {
-      Alert.alert('資料錯誤', '局數與撤離數請輸入 0 以上的整數。')
-      return
+    if (error) Alert.alert('結單失敗', error.message)
+    else {
+      setCompletionId(null)
+      setCompleteDate(todayLocal())
+      Alert.alert('結單完成', item.orders?.order_no ?? '')
+      await load()
     }
-    if (extractsNumber > gamesNumber) {
-      Alert.alert('資料錯誤', '撤離數不能大於總局數。')
-      return
-    }
-
-    setBusyId(item.id)
-    const now = new Date().toISOString()
-
-    const { error } = await supabase
-      .from('order_players')
-      .update({
-        status: 'completed',
-        completed_at: now,
-        games_played: gamesNumber,
-        extracts: extractsNumber,
-        calculated_pay: Number(item.assigned_pay ?? 0),
-        final_pay: Number(item.assigned_pay ?? 0)
-      })
-      .eq('id', item.id)
-
-    if (error) {
-      setBusyId(null)
-      Alert.alert('結單失敗', error.message)
-      return
-    }
-
-    const { data: remaining } = await supabase
-      .from('order_players')
-      .select('id')
-      .eq('order_id', item.order_id)
-      .neq('status', 'completed')
-      .limit(1)
-
-    if (!remaining?.length) {
-      await supabase
-        .from('orders')
-        .update({ status: 'completed', completed_at: now })
-        .eq('id', item.order_id)
-    }
-
-    setGames('')
-    setExtracts('')
-    setCompletionId(null)
-    setBusyId(null)
-    Alert.alert('結單完成', item.orders?.order_no ?? '')
-    await load()
   }
 
   return (
@@ -189,7 +128,7 @@ export default function OrdersScreen() {
       <H1>{isPlayer ? '我的訂單' : '訂單'}</H1>
       <Muted>
         {isPlayer
-          ? '查看派給你的訂單，接單後可填寫局數與撤離數完成結單。'
+          ? '目前現役打手可以直接結整張單；被換下的打手只能查看紀錄。'
           : 'RLS 會依登入角色自動限制能看到的訂單。'}
       </Muted>
 
@@ -209,23 +148,13 @@ export default function OrdersScreen() {
                 <Muted>狀態：{statusText(item.status)}</Muted>
                 <Muted>預計分成：${Number(item.assigned_pay ?? 0).toLocaleString()}</Muted>
               </View>
-
-              {item.status === 'assigned' ? (
-                <Button
-                  title={busyId === item.id ? '接單中…' : '接受訂單'}
-                  onPress={() => acceptAssignment(item)}
-                  disabled={busyId === item.id}
-                />
-              ) : null}
-
-              {item.is_active_slot && (item.status === 'accepted' || item.status === 'in_progress') && completionId !== item.id ? (
+              {item.is_active_slot && item.orders?.status !== 'completed' && completionId !== item.id ? (
                 <Button
                   title="開始結單"
                   tone="neutral"
                   onPress={() => {
                     setCompletionId(item.id)
-                    setGames(item.games_played ? String(item.games_played) : '')
-                    setExtracts(item.extracts ? String(item.extracts) : '')
+                    setCompleteDate(todayLocal())
                   }}
                 />
               ) : null}
@@ -233,12 +162,11 @@ export default function OrdersScreen() {
               {completionId === item.id ? (
                 <View style={styles.completeBox}>
                   <H2>結單資料</H2>
-                  <Field value={games} onChangeText={setGames} placeholder="總局數" keyboardType="numeric" />
-                  <Field value={extracts} onChangeText={setExtracts} placeholder="撤離數" keyboardType="numeric" />
-                  <Muted>目前先以報單時的預計分成作為最終薪資；下一階段會接入各單種自動計薪規則。</Muted>
+                  <Field value={completeDate} onChangeText={setCompleteDate} placeholder="YYYY-MM-DD" />
+                  <Muted>只有目前仍在做這張單的打手可以結單。送出後會一次完成整張訂單，日期預設今天。</Muted>
                   <Button
                     title={busyId === item.id ? '送出中…' : '確認結單'}
-                    onPress={() => completeAssignment(item)}
+                    onPress={() => completeOrder(item)}
                     disabled={busyId === item.id}
                   />
                   <Button
@@ -246,15 +174,14 @@ export default function OrdersScreen() {
                     tone="neutral"
                     onPress={() => {
                       setCompletionId(null)
-                      setGames('')
-                      setExtracts('')
+                      setCompleteDate(todayLocal())
                     }}
                   />
                 </View>
               ) : null}
 
               {item.status === 'completed' ? (
-                <Muted>已完成 · {item.games_played} 局 / {item.extracts} 撤離</Muted>
+                <Muted>已完成</Muted>
               ) : null}
 
               {!item.is_active_slot && item.status !== 'completed' ? (
@@ -312,3 +239,5 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border
   }
 })
+
+function todayLocal(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
