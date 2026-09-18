@@ -1,8 +1,10 @@
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { Button, Card, H1, H2, Muted, Screen, colors } from '@/components/ui'
 import { useAuth } from '@/providers/AuthProvider'
+import { supabase } from '@/lib/supabase'
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -16,6 +18,21 @@ function Stat({ label, value }: { label: string; value: string }) {
 export default function HomeScreen() {
   const { profile, signOut } = useAuth()
   const role = profile?.role
+  const [inProgress, setInProgress] = useState(0)
+  const [readyToClose, setReadyToClose] = useState(0)
+
+  useFocusEffect(useCallback(() => {
+    if (role !== 'staff' && role !== 'admin') return
+    let alive = true
+    ;(async () => {
+      const [{ count: progress }, { count: ready }] = await Promise.all([
+        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+        supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'in_progress').not('completed_at', 'is', null)
+      ])
+      if (alive) { setInProgress(progress ?? 0); setReadyToClose(ready ?? 0) }
+    })()
+    return () => { alive = false }
+  }, [role]))
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ flexGrow: 1 }}>
@@ -55,8 +72,8 @@ export default function HomeScreen() {
         {(role === 'staff' || role === 'admin') && (
           <>
             <View style={styles.row}>
-              <Stat label="進行中訂單" value="0" />
-              <Stat label="待結單" value="0" />
+              <Stat label="進行中訂單" value={String(inProgress)} />
+              <Stat label="待結單" value={String(readyToClose)} />
             </View>
             <Card>
               <H2>營運中心</H2>
