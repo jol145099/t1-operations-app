@@ -33,7 +33,7 @@ type AssignmentRow = {
 
 export default function OrdersScreen() {
   const { profile } = useAuth()
-  const { status } = useLocalSearchParams<{ status?: string }>()
+  const { status, days } = useLocalSearchParams<{ status?: string; days?: string }>()
   const isPlayer = profile?.role === 'player'
   const [rows, setRows] = useState<OrderRow[]>([])
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
@@ -75,6 +75,7 @@ export default function OrdersScreen() {
     } else {
       let query = supabase.from('orders').select('id, order_no, amount_paid, status, created_at').order('created_at', { ascending: false }).limit(50)
       if (status) query = query.eq('status', status)
+      if (status === 'completed' && days === '14') query = query.gte('completed_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
       const { data, error } = await query
 
       if (error) Alert.alert('讀取訂單失敗', error.message)
@@ -82,7 +83,7 @@ export default function OrdersScreen() {
     }
 
     setLoading(false)
-  }, [isPlayer, profile?.id, status])
+  }, [isPlayer, profile?.id, status, days])
 
   useFocusEffect(useCallback(() => { load() }, [load]))
 
@@ -126,7 +127,7 @@ export default function OrdersScreen() {
 
   return (
     <Screen>
-      <H1>{isPlayer ? '我的訂單' : status === 'in_progress' ? '進行中訂單' : '所有訂單'}</H1>
+      <H1>{isPlayer ? '我的訂單' : status === 'in_progress' ? '進行中訂單' : status === 'completed' && days === '14' ? '近 2 週已結單' : '所有訂單'}</H1>
       <Muted>
         {isPlayer
           ? '目前現役打手可以直接結整張單；被換下的打手只能查看紀錄。'
