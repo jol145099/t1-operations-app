@@ -14,6 +14,7 @@ type Assignment = {
   completed_at: string | null
   orders: {
     order_no: string
+    completed_at: string | null
     customers: { display_name: string } | null
     order_types: { name: string } | null
   } | null
@@ -95,12 +96,11 @@ export default function SettlementDetailScreen() {
       const [a, l, d] = await Promise.all([
         supabase
           .from('order_players')
-          .select('player_id, assigned_pay, calculated_pay, final_pay, completed_at, orders(order_no, customers(display_name), order_types(name))')
+          .select('player_id, assigned_pay, calculated_pay, final_pay, completed_at, orders!inner(order_no, status, completed_at, customers(display_name), order_types(name))')
           .eq('player_id', playerId)
-          .eq('status', 'completed')
-          .gte('completed_at', start)
-          .lt('completed_at', nextExclusive)
-          .order('completed_at', { ascending: true }),
+          .eq('orders.status', 'completed')
+          .gte('orders.completed_at', start)
+          .lt('orders.completed_at', nextExclusive),
         supabase
           .from('ledger')
           .select('player_id, amount, description, occurred_at, type')
@@ -166,7 +166,7 @@ export default function SettlementDetailScreen() {
               {assignments.length === 0 ? <Muted>這一期沒有完單收入。</Muted> : assignments.map((row, index) => (
                 <DetailRow
                   key={`${row.orders?.order_no ?? 'order'}-${index}`}
-                  date={shortDate(row.completed_at)}
+                  date={shortDate(row.orders?.completed_at ?? row.completed_at)}
                   title={`${row.orders?.order_no ?? '訂單'} · ${row.orders?.order_types?.name || '訂單'}`}
                   subtitle={row.orders?.customers?.display_name ? `老闆：${row.orders.customers.display_name}` : undefined}
                   amount={money(Number(row.final_pay ?? row.calculated_pay ?? row.assigned_pay ?? 0))}
