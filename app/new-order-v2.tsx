@@ -69,6 +69,7 @@ export default function NewOrderV2Screen() {
   const [categoryOpen, setCategoryOpen] = useState(false)
 
   const [orderDate, setOrderDate] = useState(todayLocal())
+  const [orderCalendarOpen, setOrderCalendarOpen] = useState(false)
   const [customerId, setCustomerId] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerQuery, setCustomerQuery] = useState('')
@@ -714,7 +715,8 @@ export default function NewOrderV2Screen() {
         <Card>
           <H2>2. 下單資料</H2>
           <Text style={styles.label}>下單日期</Text>
-          <Field value={orderDate} onChangeText={setOrderDate} placeholder="YYYY-MM-DD" />
+          <Pressable onPress={() => setOrderCalendarOpen((v) => !v)} style={styles.dateButton}><Text style={styles.dateButtonText}>📅 {orderDate}</Text></Pressable>
+          {orderCalendarOpen ? <View style={styles.calendarPopup}><CalendarPicker value={orderDate} onChange={(d) => { setOrderDate(d); setOrderCalendarOpen(false) }} /></View> : null}
 
           <Segment
             label="下單身份"
@@ -1126,7 +1128,18 @@ function Segment({ label, options, value, onChange }: { label: string; options: 
   )
 }
 
+function CalendarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const selected = new Date(value + 'T12:00:00')
+  const [view, setView] = useState(new Date(selected.getFullYear(), selected.getMonth(), 1))
+  const y = view.getFullYear(), m = view.getMonth()
+  const first = new Date(y, m, 1).getDay(), count = new Date(y, m + 1, 0).getDate()
+  const cells = [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)]
+  const valueFor = (d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  return <View style={styles.calendar}><View style={styles.calHead}><Pressable onPress={() => setView(new Date(y, m - 1, 1))}><Text style={styles.calNav}>‹</Text></Pressable><Text style={styles.calTitle}>{y} 年 {m + 1} 月</Text><Pressable onPress={() => setView(new Date(y, m + 1, 1))}><Text style={styles.calNav}>›</Text></Pressable></View><View style={styles.week}>{['日','一','二','三','四','五','六'].map(w => <Text key={w} style={styles.weekText}>{w}</Text>)}</View><View style={styles.grid}>{cells.map((d, i) => d ? <Pressable key={i} onPress={() => onChange(valueFor(d))} style={[styles.day, value === valueFor(d) && styles.dayActive]}><Text style={styles.dayText}>{d}</Text></Pressable> : <View key={i} style={styles.day} />)}</View></View>
+}
+
 const styles = StyleSheet.create({
+  dateButton:{alignSelf:'flex-start',borderWidth:1,borderColor:colors.border,borderRadius:10,paddingHorizontal:12,paddingVertical:9,backgroundColor:colors.card,marginBottom:10},dateButtonText:{color:colors.text,fontWeight:'800'},calendarPopup:{maxWidth:330,width:'100%',alignSelf:'flex-start',marginBottom:10},calendar:{gap:8,padding:8,borderWidth:1,borderColor:colors.border,borderRadius:14},calHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},calNav:{color:colors.accent,fontSize:30,fontWeight:'900',paddingHorizontal:12},calTitle:{color:colors.text,fontWeight:'900',fontSize:17},week:{flexDirection:'row'},weekText:{width:'14.285%',textAlign:'center',color:colors.muted,fontWeight:'700'},grid:{flexDirection:'row',flexWrap:'wrap'},day:{width:'14.285%',height:40,alignItems:'center',justifyContent:'center',borderRadius:20},dayActive:{backgroundColor:colors.accent},dayText:{color:colors.text,fontWeight:'700'},
   label: { color: colors.text, fontWeight: '700', fontSize: 14 },
   selectButton: {
     minHeight: 50,
