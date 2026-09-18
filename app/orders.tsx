@@ -87,16 +87,16 @@ export default function OrdersScreen() {
   useFocusEffect(useCallback(() => { load() }, [load]))
 
   async function deleteOrder(item: OrderRow) {
-    Alert.alert('刪除訂單', `確定要刪除 ${item.order_no}？刪除後無法復原。`, [
-      { text: '取消', style: 'cancel' },
-      { text: '刪除', style: 'destructive', onPress: async () => {
-        setBusyId(item.id)
-        const { error } = await supabase.rpc('delete_t1_order', { p_order_id: item.id })
-        setBusyId(null)
-        if (error) Alert.alert('刪除失敗', error.message)
-        else await load()
-      }}
-    ])
+    if (busyId) return
+    setBusyId(item.id)
+    const { error } = await supabase.rpc('delete_t1_order', { p_order_id: item.id })
+    setBusyId(null)
+    if (error) {
+      Alert.alert('刪除失敗', error.message)
+      return
+    }
+    Alert.alert('已刪除', item.order_no)
+    await load()
   }
 
   async function completeOrder(item: AssignmentRow) {
