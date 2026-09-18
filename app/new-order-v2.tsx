@@ -547,7 +547,8 @@ export default function NewOrderV2Screen() {
       vip_eligible_amount: category === '代儲' ? 0 : ceilMoney(currentAmount),
       dispatch_rate: storedRate,
       requires_player: requiresPlayers,
-      status: requiresPlayers ? 'awaiting_player' : 'completed',
+      status: requiresPlayers ? 'in_progress' : 'completed',
+      started_at: requiresPlayers ? createdAt : null,
       completed_at: requiresPlayers ? null : createdAt,
       created_at: createdAt,
       notes
@@ -564,7 +565,7 @@ export default function NewOrderV2Screen() {
           order_id: order.id,
           player_id: slot.playerId,
           assigned_pay: ceilMoney(Number(slot.pay || 0)),
-          status: 'assigned',
+          status: 'in_progress',
           notes: category === '小時單'
             ? `${hourlyRanks[index] ?? slot.rank}級接單`
             : category === '女陪單'
