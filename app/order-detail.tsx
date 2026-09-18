@@ -17,7 +17,7 @@ export default function OrderDetailScreen(){
   const [a,p,o]=await Promise.all([
    supabase.from('order_players').select('id, player_id, status, assigned_pay, final_pay, compensation_amount, is_active_slot, replaced_by_assignment_id, replacement_reason, replaced_at, players(display_name)').eq('order_id',orderId).order('created_at'),
    supabase.from('players').select('id, display_name').order('display_name'),
-   supabase.from('orders').select('id, status, amount_paid, completed_at').eq('id',orderId).single()
+   supabase.from('orders').select('id, status, amount_paid, created_at, started_at, completed_at, notes').eq('id',orderId).single()
   ])
   if(a.error||p.error||o.error)Alert.alert('讀取失敗',a.error?.message||p.error?.message||o.error?.message||'')
   else{setRows(a.data??[]);setPlayers(p.data??[]);setOrder(o.data)}
@@ -57,12 +57,12 @@ export default function OrderDetailScreen(){
 
  if(!orderId)return <Screen><H1>訂單詳情</H1><Muted>缺少訂單 ID。</Muted></Screen>
  return <Screen><H1>{orderNo||'訂單詳情'}</H1><Muted>換人會保留「誰換誰」與原打手實拿／賠付紀錄。</Muted>
-  {order?<Card><View style={styles.row}><H2>訂單狀態</H2><Text style={order.status==='completed'?styles.active:styles.name}>{order.status==='completed'?'已完成':'進行中'}</Text></View><Muted>訂單金額：$ {Number(order.amount_paid||0).toLocaleString()}</Muted>{order.status==='completed'&&order.completed_at?<Muted>結單日期：{String(order.completed_at).slice(0,10)}</Muted>:null}</Card>:null}
+  {order?<Card><View style={styles.row}><H2>訂單狀態</H2><Text style={order.status==='completed'?styles.active:styles.name}>{order.status==='completed'?'已完成':'進行中'}</Text></View>{canEdit?<Muted>訂單金額：$ {Number(order.amount_paid||0).toLocaleString()}</Muted>:null}{order.notes?<Muted>{orderSummary(order.notes)}</Muted>:null}<Muted>接單日期：{String(order.started_at||order.created_at).slice(0,10)}</Muted>{order.status==='completed'&&order.completed_at?<Muted>結單日期：{String(order.completed_at).slice(0,10)}</Muted>:null}</Card>:null}
   {loading?<ActivityIndicator color={colors.accent}/>:<FlatList data={rows} keyExtractor={x=>x.id} contentContainerStyle={{gap:12,paddingBottom:30}}
    renderItem={({item})=><PlayerCard item={item} canEdit={canEdit} busy={busy} replacing={replaceId===item.id} players={players} rows={rows}
     newPlayerId={newPlayerId} setNewPlayerId={setNewPlayerId} playerQuery={playerQuery} setPlayerQuery={setPlayerQuery} finalPay={finalPay} setFinalPay={setFinalPay} newFinalPay={newFinalPay} setNewFinalPay={setNewFinalPay} reason={reason} setReason={setReason}
     beginReplace={()=>beginReplace(item)} cancelReplace={()=>setReplaceId(null)} replacePlayer={replacePlayer} savePay={savePay}/>}
-   ListFooterComponent={canEdit&&order?.status!=='completed'?<Card><H2>客服／店長結單</H2><Muted>最後現役的 1 或 2 位打手也可以從自己的訂單直接結整張單。</Muted><Field value={completeDate} onChangeText={setCompleteDate} placeholder="YYYY-MM-DD"/><Button title={busy?'結單中…':'完成整張訂單'} onPress={completeOrder} disabled={busy}/></Card>:null}
+   ListFooterComponent={canEdit&&order?.status!=='completed'?<Card><H2>客服／店長結單</H2><Muted>選擇實際結單日期。</Muted><View style={styles.chips}>{recentDates().map(d=><Chip key={d} label={d.slice(5)} active={completeDate===d} onPress={()=>setCompleteDate(d)}/>)}</View><Muted>結單日期：{completeDate}</Muted><Button title={busy?'結單中…':'完成整張訂單'} onPress={completeOrder} disabled={busy}/></Card>:null}
   />}
  </Screen>
 }
@@ -72,7 +72,7 @@ function PlayerCard(p:any){
  const [pay,setPay]=useState(String(Number(r.final_pay??r.assigned_pay??0)))
  const replacement=p.rows.find((x:any)=>x.id===r.replaced_by_assignment_id)
  return <Card>
-  <View style={styles.row}><Text style={styles.name}>{r.players?.display_name??'打手'}</Text><Text style={r.is_active_slot?styles.active:styles.replaced}>{r.is_active_slot?'進行中':'已換人'}</Text></View>
+  <View style={styles.row}><Text style={styles.name}>{r.players?.display_name??'打手'}</Text><Text style={r.is_active_slot?styles.active:styles.replaced}>{r.is_active_slot?(r.status==='completed'?'已完成':'進行中'):'已換人'}</Text></View>
   {!r.is_active_slot&&replacement?<Muted>換成：{replacement.players?.display_name??'新打手'}</Muted>:null}
   {r.replacement_reason?<Muted>原因：{r.replacement_reason}</Muted>:null}
   <Muted>實拿金額：$ {Number(r.final_pay??r.assigned_pay??0).toLocaleString()}（負數＝賠付）</Muted>
@@ -95,3 +95,6 @@ const styles=StyleSheet.create({
 })
 
 function todayLocal(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+
+function recentDates(){const a:string[]=[];for(let i=0;i<31;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)}return a}
+function orderSummary(v:string){try{const n=JSON.parse(v);return [n.service_category,n.detail].filter(Boolean).join(' · ')}catch{return v}}
