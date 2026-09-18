@@ -20,7 +20,7 @@ const money=(n:number)=>`$${Math.ceil(Number(n||0)).toLocaleString()}`
 const signed=(n:number)=>n>0?`+${money(n)}`:money(n)
 
 export default function SettlementScreen(){
- const {profile}=useAuth();const period=useMemo(()=>currentPeriod(),[]);const canManage=profile?.role==='staff'||profile?.role==='admin'
+ const {profile}=useAuth();const period=useMemo(()=>currentPeriod(),[]);const canManage=profile?.role==='staff'||profile?.role==='admin';const isPlayer=profile?.role==='player'
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[selectedPeriod,setSelectedPeriod]=useState('current')
  const [players,setPlayers]=useState<Player[]>([]),[assignments,setAssignments]=useState<Assignment[]>([]),[ledger,setLedger]=useState<LedgerRow[]>([]),[dispatch,setDispatch]=useState<DispatchOrder[]>([]),[saved,setSaved]=useState<SettlementRow[]>([]),[history,setHistory]=useState<SettlementRow[]>([])
  async function load(){
