@@ -6,7 +6,7 @@ import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/providers/AuthProvider'
 
-const GRADES=['SR','S','A','B','娛樂女陪'], MAPS=['航天','巴克什','大壩','監獄'], SERVERS=['陸服','台服']
+const GRADES=['SR','S','A','B','娛樂女陪'], MAPS=['航天','巴克什','大壩','監獄','AZ3','長工'], SERVERS=['陸服','台服']
 type Player={id:string;display_name:string;player_grade:string|null;specialties:string[];servers:string[];card_url:string|null;active:boolean}
 
 export default function PlayerManagement(){
