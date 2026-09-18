@@ -20,6 +20,7 @@ type AssignmentRow = {
   assigned_pay: number
   games_played: number
   extracts: number
+  is_active_slot: boolean
   orders: {
     id: string
     order_no: string
@@ -63,7 +64,7 @@ export default function OrdersScreen() {
 
       const { data, error } = await supabase
         .from('order_players')
-        .select('id, order_id, status, assigned_pay, games_played, extracts, orders(id, order_no, amount_paid, status, created_at)')
+        .select('id, order_id, status, assigned_pay, games_played, extracts, is_active_slot, orders(id, order_no, amount_paid, status, created_at)')
         .eq('player_id', player.id)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -203,7 +204,7 @@ export default function OrdersScreen() {
                 />
               ) : null}
 
-              {(item.status === 'accepted' || item.status === 'in_progress') && completionId !== item.id ? (
+              {item.is_active_slot && (item.status === 'accepted' || item.status === 'in_progress') && completionId !== item.id ? (
                 <Button
                   title="開始結單"
                   tone="neutral"
@@ -240,6 +241,10 @@ export default function OrdersScreen() {
 
               {item.status === 'completed' ? (
                 <Muted>已完成 · {item.games_played} 局 / {item.extracts} 撤離</Muted>
+              ) : null}
+
+              {!item.is_active_slot && item.status !== 'completed' ? (
+                <Muted>已換人 · 此打手不能結單</Muted>
               ) : null}
             </Card>
           )}
