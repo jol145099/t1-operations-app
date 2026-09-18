@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 
 import { Button, Card, Field, H1, H2, Muted, Screen, colors } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -33,6 +33,7 @@ type AssignmentRow = {
 
 export default function OrdersScreen() {
   const { profile } = useAuth()
+  const { status } = useLocalSearchParams<{ status?: string }>()
   const isPlayer = profile?.role === 'player'
   const [rows, setRows] = useState<OrderRow[]>([])
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
@@ -72,22 +73,18 @@ export default function OrdersScreen() {
       if (error) Alert.alert('讀取訂單失敗', error.message)
       else setAssignments((data ?? []) as unknown as AssignmentRow[])
     } else {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, order_no, amount_paid, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(50)
+      let query = supabase.from('orders').select('id, order_no, amount_paid, status, created_at').order('created_at', { ascending: false }).limit(50)
+      if (status) query = query.eq('status', status)
+      const { data, error } = await query
 
       if (error) Alert.alert('讀取訂單失敗', error.message)
       else setRows((data ?? []) as OrderRow[])
     }
 
     setLoading(false)
-  }, [isPlayer, profile?.id])
+  }, [isPlayer, profile?.id, status])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  useFocusEffect(useCallback(() => { load() }, [load]))
 
   async function deleteOrder(item: OrderRow) {
     Alert.alert('刪除訂單', `確定要刪除 ${item.order_no}？刪除後無法復原。`, [
@@ -125,7 +122,7 @@ export default function OrdersScreen() {
 
   return (
     <Screen>
-      <H1>{isPlayer ? '我的訂單' : '訂單'}</H1>
+      <H1>{isPlayer ? '我的訂單' : status === 'in_progress' ? '進行中訂單' : '所有訂單'}</H1>
       <Muted>
         {isPlayer
           ? '目前現役打手可以直接結整張單；被換下的打手只能查看紀錄。'
